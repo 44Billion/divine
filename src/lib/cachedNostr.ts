@@ -28,6 +28,7 @@ export function createCachedNostr<T extends NostrClient>(
 
   // Wrap query method with cache-first, gateway-second logic
   cachedNostr.query = async (filters: NostrFilter[], opts?: { signal?: AbortSignal }): Promise<NostrEvent[]> => {
+    const startTime = performance.now();
     debugLog('[CachedNostr] Query with filters:', filters);
 
     const relayUrl = getRelayUrl();
@@ -42,7 +43,7 @@ export function createCachedNostr<T extends NostrClient>(
     if (isCacheable) {
       const cachedResults = await eventCache.query(filters);
       if (cachedResults.length > 0) {
-        debugLog(`[CachedNostr] Cache hit: ${cachedResults.length} events`);
+        debugLog(`[CachedNostr] Cache hit: ${cachedResults.length} events in ${(performance.now() - startTime).toFixed(0)}ms`);
 
         // Background refresh via gateway or WebSocket
         _refreshInBackground(baseNostr.query.bind(baseNostr), filters, opts, useGateway);
@@ -56,6 +57,7 @@ export function createCachedNostr<T extends NostrClient>(
     // 2. Try gateway for ALL divine.video queries (not just cacheable)
     if (useGateway) {
       try {
+        const gatewayStart = performance.now();
         debugLog('[CachedNostr] Trying gateway for divine.video query');
         const gatewayResults: NostrEvent[] = [];
         for (const filter of filters) {
@@ -65,7 +67,7 @@ export function createCachedNostr<T extends NostrClient>(
 
         // Gateway can return empty for valid queries (e.g., no matching events)
         // Only fall back to WebSocket if gateway throws an error
-        debugLog(`[CachedNostr] Gateway returned ${gatewayResults.length} events`);
+        debugLog(`[CachedNostr] Gateway returned ${gatewayResults.length} events in ${(performance.now() - gatewayStart).toFixed(0)}ms`);
 
         // Cache profile/contact results
         if (isCacheable && gatewayResults.length > 0) {
@@ -74,13 +76,14 @@ export function createCachedNostr<T extends NostrClient>(
 
         return gatewayResults;
       } catch (err) {
-        debugLog('[CachedNostr] Gateway failed, falling back to WebSocket:', err);
+        debugLog(`[CachedNostr] Gateway failed after ${(performance.now() - startTime).toFixed(0)}ms, falling back to WebSocket:`, err);
       }
     }
 
     // 3. Fall back to WebSocket
+    const wsStart = performance.now();
     const results = await baseNostr.query(filters, opts);
-    debugLog(`[CachedNostr] Relay returned ${results.length} events`);
+    debugLog(`[CachedNostr] WebSocket returned ${results.length} events in ${(performance.now() - wsStart).toFixed(0)}ms`);
 
     // Cache the results if cacheable
     if (isCacheable && results.length > 0) {
