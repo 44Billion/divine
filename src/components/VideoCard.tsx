@@ -13,7 +13,6 @@ import { VideoPlayer } from '@/components/VideoPlayer';
 import { VideoCommentsModal } from '@/components/VideoCommentsModal';
 import { ThumbnailPlayer } from '@/components/ThumbnailPlayer';
 import { NoteContent } from '@/components/NoteContent';
-import { ProofModeBadge } from '@/components/ProofModeBadge';
 import { VineBadge } from '@/components/VineBadge';
 import { AddToListDialog } from '@/components/AddToListDialog';
 import { ReportContentDialog } from '@/components/ReportContentDialog';
@@ -354,15 +353,6 @@ export function VideoCard({
                 <Link to={profileUrl} className="font-semibold hover:underline truncate">
                   {displayName}
                 </Link>
-                <div className="flex items-center gap-2 mt-1">
-                  {video.proofMode && video.proofMode.level !== 'unverified' && (
-                    <ProofModeBadge
-                      level={video.proofMode.level}
-                      proofData={video.proofMode}
-                      showDetails={true}
-                    />
-                  )}
-                </div>
               </div>
               {(isMigratedVine || timeAgo) && (
                 <div className="flex items-center gap-2 text-sm text-muted-foreground shrink-0">
@@ -412,6 +402,18 @@ export function VideoCard({
               ) : (
                 <div className="flex items-center justify-center h-full text-muted-foreground">
                   <p>Failed to load video</p>
+                </div>
+              )}
+
+              {/* Human Made badge overlay - upper right corner */}
+              {video.proofMode && video.proofMode.level !== 'unverified' && (
+                <div className="absolute top-3 right-3 z-30">
+                  <img
+                    src="/ui-icons/human-made.svg"
+                    alt="Human Made"
+                    className="w-8 h-8 drop-shadow-lg"
+                    title="Human Made - verified with ProofMode"
+                  />
                 </div>
               )}
 
@@ -476,13 +478,6 @@ export function VideoCard({
                 )}
                 <div className="flex items-center gap-2 mt-1">
                   {isMigratedVine && <VineBadge />}
-                  {video.proofMode && video.proofMode.level !== 'unverified' && (
-                    <ProofModeBadge
-                      level={video.proofMode.level}
-                      proofData={video.proofMode}
-                      showDetails={true}
-                    />
-                  )}
                 </div>
               </div>
             </div>
