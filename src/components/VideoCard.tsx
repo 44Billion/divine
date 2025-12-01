@@ -406,17 +406,6 @@ export function VideoCard({
                 </div>
               )}
 
-              {/* Human Made badge overlay - upper right corner */}
-              {video.proofMode && video.proofMode.level !== 'unverified' && (
-                <div className="absolute top-3 right-3 z-30">
-                  <ProofModeBadge
-                    level={video.proofMode.level}
-                    proofData={video.proofMode}
-                    showDetails={true}
-                  />
-                </div>
-              )}
-
               {/* Mute/Unmute button overlay - bottom right corner */}
               {isPlaying && !videoError && (
                 <Button
@@ -477,6 +466,13 @@ export function VideoCard({
                   </span>
                 )}
                 <div className="flex items-center gap-2 mt-1">
+                  {video.proofMode && video.proofMode.level !== 'unverified' && (
+                    <ProofModeBadge
+                      level={video.proofMode.level}
+                      proofData={video.proofMode}
+                      showDetails={true}
+                    />
+                  )}
                   {isMigratedVine && <VineBadge />}
                 </div>
               </div>

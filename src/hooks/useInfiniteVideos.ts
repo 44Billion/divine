@@ -137,9 +137,14 @@ export function useInfiniteVideos({
 
         case 'trending':
           // Only add search if relay supports NIP-50
-          if (effectiveSortMode) {
+          // NOTE: Do NOT add NIP-50 search with #platform filter for Classic (top) mode
+          // The relay doesn't support combining tag queries with search - returns wrong results
+          // Classic Vines are sorted client-side by loop count instead
+          if (effectiveSortMode && effectiveSortMode !== 'top') {
             debugLog(`[useInfiniteVideos] 🔥 Trending feed with sort mode: ${effectiveSortMode}`);
             filter.search = `sort:${effectiveSortMode}`;
+          } else if (effectiveSortMode === 'top') {
+            debugLog('[useInfiniteVideos] 🎬 Classic mode: using #platform filter, no NIP-50 search (will sort by loop count client-side)');
           } else {
             debugLog('[useInfiniteVideos] ⚠️ Trending feed WITHOUT sort mode (relay may not support NIP-50)');
           }
