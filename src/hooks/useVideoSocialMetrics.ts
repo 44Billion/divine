@@ -4,6 +4,7 @@
 import { UserInteractions } from '@/types/video';
 import { useQuery } from '@tanstack/react-query';
 import { useNostr } from '@nostrify/react';
+import type { NIP50Filter } from '@/types/nostr';
 
 import { SHORT_VIDEO_KIND } from '@/types/video';
 
@@ -41,12 +42,12 @@ export function useVideoSocialMetrics(
         // For kind 34236 (addressable videos), we need to query by both #e and #a tags
         // - #e tag: Used by likes (kind 7) and zap receipts (kind 9735)
         // - #a tag: Used by comments (kind 1111), and generic reposts (kind 16) for addressable events
-        const filters = [
+        const filters: NIP50Filter[] = [
           {
             kinds: [7, 9735], // reactions, zap receipts
             '#e': [videoId], // Standard event references
             limit: 500,
-          }
+          } as NIP50Filter & { '#e': string[] }
         ];
 
         // Add addressable event filter for comments and generic reposts
@@ -55,7 +56,7 @@ export function useVideoSocialMetrics(
           kinds: [1111, 16], // NIP-22 comments, generic reposts
           '#a': [addressableId], // Addressable event references
           limit: 500,
-        } as any); // Type assertion needed for dynamic tag filter properties
+        } as NIP50Filter & { '#a': string[] });
 
         const events = await nostr.query(filters, { signal });
 
