@@ -606,8 +606,11 @@ export const VideoPlayer = forwardRef<HTMLVideoElement, VideoPlayerProps>(
           authHeader = await getAuthHeader(hlsUrl);
           if (authHeader) {
             verboseLog(`[VideoPlayer ${videoId}] Using NIP-98 auth for media request`);
+          } else {
+            verboseLog(`[VideoPlayer ${videoId}] Adult verified but no auth header generated (no signer?)`);
           }
         }
+        verboseLog(`[VideoPlayer ${videoId}] loadVideoSource called - isAdultVerified: ${isAdultVerified}, authRetryCount: ${authRetryCount}`);
 
       // Priority: HLS URL > fallback URLs > primary src
       // Try HLS first for adaptive bitrate streaming on slower connections
@@ -798,7 +801,10 @@ export const VideoPlayer = forwardRef<HTMLVideoElement, VideoPlayerProps>(
             className="absolute inset-0 flex items-center justify-center z-20"
             data-testid={isMobile ? "mobile-loading" : undefined}
           >
-            <div className='absolute w-full h-full bg-black'></div>
+            {/* Only show black bg if no blurhash, otherwise let blurhash show through */}
+            {!isValidBlurhash(blurhash) && (
+              <div className='absolute w-full h-full bg-black'></div>
+            )}
             <img
               src="/ui-icons/loading-brand.svg"
               alt="Loading..."
