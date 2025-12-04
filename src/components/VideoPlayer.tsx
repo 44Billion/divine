@@ -676,7 +676,46 @@ export const VideoPlayer = forwardRef<HTMLVideoElement, VideoPlayerProps>(
         verboseLog(`[VideoPlayer ${videoId}] Using direct playback - URL ${currentUrlIndex}/${allUrls.length - 1}: ${currentUrl}`);
 
         if (currentUrl) {
-          video.src = currentUrl;
+          // If adult verified, fetch with auth headers and use blob URL
+          if (isAdultVerified) {
+            verboseLog(`[VideoPlayer ${videoId}] Fetching MP4 with NIP-98 auth`);
+            (async () => {
+              try {
+                const authHeader = await getAuthHeader(currentUrl);
+                if (authHeader) {
+                  const response = await fetch(currentUrl, {
+                    headers: { 'Authorization': authHeader }
+                  });
+                  if (response.ok) {
+                    const blob = await response.blob();
+                    const blobUrl = URL.createObjectURL(blob);
+                    video.src = blobUrl;
+                    // Clean up blob URL when video is done
+                    video.onloadeddata = () => {
+                      verboseLog(`[VideoPlayer ${videoId}] MP4 blob loaded successfully`);
+                    };
+                  } else if (response.status === 401 || response.status === 403) {
+                    debugError(`[VideoPlayer ${videoId}] Auth failed even with NIP-98 (${response.status})`);
+                    setRequiresAuth(true);
+                    setIsLoading(false);
+                  } else {
+                    debugError(`[VideoPlayer ${videoId}] Fetch failed: ${response.status}`);
+                    setHasError(true);
+                    setIsLoading(false);
+                  }
+                } else {
+                  // No auth header available, try without
+                  video.src = currentUrl;
+                }
+              } catch (error) {
+                debugError(`[VideoPlayer ${videoId}] Fetch error:`, error);
+                setHasError(true);
+                setIsLoading(false);
+              }
+            })();
+          } else {
+            video.src = currentUrl;
+          }
           setIsLoading(true);
           setHasError(false);
         }
