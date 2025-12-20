@@ -32,7 +32,7 @@ import { formatDistanceToNow } from 'date-fns';
 import type { ParsedVideoData } from '@/types/video';
 import type { NostrMetadata } from '@nostrify/nostrify';
 import { cn } from '@/lib/utils';
-import { formatViewCount, formatDuration, formatCount } from '@/lib/formatUtils';
+import { formatViewCount, formatCount } from '@/lib/formatUtils';
 import { getSafeProfileImage } from '@/lib/imageUtils';
 import type { VideoNavigationContext } from '@/hooks/useVideoNavigation';
 import { useToast } from '@/hooks/useToast';
@@ -381,10 +381,10 @@ export function VideoCard({
           )}
 
           {/* Video player or thumbnail */}
-          <CardContent className={cn("p-0", isHorizontal && "p-2")}>
+          <CardContent className={cn("p-0 flex justify-center", isHorizontal && "p-2")}>
             <div
-              className="relative bg-black rounded-lg overflow-hidden w-full"
-              style={{ aspectRatio: videoAspectRatio?.toString() || '1' }}
+              className="relative rounded-lg overflow-hidden max-h-[70vh]"
+              style={videoAspectRatio ? { aspectRatio: videoAspectRatio.toString() } : undefined}
             >
               {!isPlaying ? (
                 <ThumbnailPlayer
@@ -554,9 +554,6 @@ export function VideoCard({
                     <Eye className="h-3 w-3" />
                     {formatViewCount(video.loopCount!)}
                   </span>
-                )}
-                {(video.duration ?? 0) > 0 && (
-                  <span>{formatDuration(video.duration!)}</span>
                 )}
               </div>
             </div>

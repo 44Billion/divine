@@ -5,7 +5,6 @@ import { useState } from 'react';
 import { Play } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { formatDuration } from '@/lib/formatUtils';
 
 interface ThumbnailPlayerProps {
   videoId: string;
@@ -78,7 +77,7 @@ export function ThumbnailPlayer({
   return (
     <div
       className={cn(
-        'relative aspect-square bg-black cursor-pointer group overflow-hidden',
+        'relative aspect-square cursor-pointer group overflow-hidden',
         'hover:scale-105 transition-transform duration-200',
         className
       )}
@@ -135,15 +134,6 @@ export function ThumbnailPlayer({
         </Button>
       </div>
 
-      {/* Duration overlay */}
-      {duration && (
-        <div
-          className="absolute bottom-2 right-2 bg-black/70 text-white text-xs px-2 py-1 rounded backdrop-blur-sm"
-          data-testid="thumbnail-duration"
-        >
-          {formatDuration(duration)}
-        </div>
-      )}
     </div>
   );
 }
