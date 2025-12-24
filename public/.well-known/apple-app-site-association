@@ -27,5 +27,8 @@
         ]
       }
     ]
+  },
+  "webcredentials": {
+    "apps": ["GZCZBKH7MY.co.openvine.app"]
   }
 }
