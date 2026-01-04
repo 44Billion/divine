@@ -2,7 +2,8 @@
 // ABOUTME: Shows user's lists, trending lists, and allows list creation
 
 import { useState } from 'react';
-import { useVideoLists, useTrendingVideoLists } from '@/hooks/useVideoLists';
+import { useVideoLists, useTrendingVideoLists, useFollowedUsersLists } from '@/hooks/useVideoLists';
+import { useFollowList } from '@/hooks/useFollowList';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useAuthor } from '@/hooks/useAuthor';
 import { Link } from 'react-router-dom';
@@ -104,6 +105,8 @@ export default function ListsPage() {
   const { data: userLists, isLoading: userListsLoading } = useVideoLists(user?.pubkey);
   const { data: trendingLists, isLoading: trendingLoading } = useTrendingVideoLists();
   const [showCreateDialog, setShowCreateDialog] = useState(false);
+  const { data: followedPubkeys } = useFollowList();
+  const { data: followedUsersLists, isLoading: discoverLoading } = useFollowedUsersLists(followedPubkeys);
 
   return (
     <div className="container max-w-6xl mx-auto px-4 py-8">
@@ -227,15 +230,63 @@ export default function ListsPage() {
 
         {/* Discover Tab */}
         <TabsContent value="discover" className="space-y-6">
-          <div className="text-center py-12">
-            <Users className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
-            <p className="text-muted-foreground mb-4">
-              Discover lists from creators you follow
-            </p>
-            <p className="text-sm text-muted-foreground">
-              Coming soon...
-            </p>
-          </div>
+          {!user ? (
+            <Card className="border-dashed">
+              <CardContent className="py-12 text-center">
+                <Users className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
+                <p className="text-muted-foreground mb-4">
+                  Log in to discover lists from people you follow
+                </p>
+              </CardContent>
+            </Card>
+          ) : discoverLoading ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {[...Array(6)].map((_, i) => (
+                <Card key={i}>
+                  <CardHeader>
+                    <Skeleton className="h-6 w-32" />
+                    <Skeleton className="h-4 w-full mt-2" />
+                  </CardHeader>
+                  <CardContent>
+                    <Skeleton className="h-8 w-full" />
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          ) : followedUsersLists && followedUsersLists.length > 0 ? (
+            <>
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Users className="h-4 w-4" />
+                <span>Lists from people you follow</span>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {followedUsersLists.map((list) => (
+                  <ListCard key={`${list.pubkey}-${list.id}`} list={list} />
+                ))}
+              </div>
+            </>
+          ) : followedPubkeys && followedPubkeys.length > 0 ? (
+            <Card className="border-dashed">
+              <CardContent className="py-12 text-center">
+                <Users className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
+                <p className="text-muted-foreground">
+                  No lists found from people you follow
+                </p>
+                <p className="text-sm text-muted-foreground mt-2">
+                  Check back later or explore trending lists
+                </p>
+              </CardContent>
+            </Card>
+          ) : (
+            <Card className="border-dashed">
+              <CardContent className="py-12 text-center">
+                <Users className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
+                <p className="text-muted-foreground mb-4">
+                  Follow some creators to see their lists here
+                </p>
+              </CardContent>
+            </Card>
+          )}
         </TabsContent>
       </Tabs>
 
