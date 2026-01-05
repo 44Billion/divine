@@ -121,20 +121,23 @@ export function VideoCard({
   const canDelete = useCanDeleteVideo(video);
 
   // Check if video requires auth (adult verification) on mount
+  // Only run once per video URL, not on every isAdultVerified change
   useEffect(() => {
-    if (isAdultVerified) {
-      setRequiresAuth(false);
-      return;
-    }
+    // Skip if already verified
+    if (isAdultVerified) return;
 
     const urlToCheck = video.videoUrl || video.thumbnailUrl;
     if (!urlToCheck) return;
 
+    let cancelled = false;
     checkMediaAuth(urlToCheck).then(({ authorized, status }) => {
+      if (cancelled) return;
       if (!authorized && (status === 401 || status === 403)) {
         setRequiresAuth(true);
       }
     });
+
+    return () => { cancelled = true; };
   }, [video.videoUrl, video.thumbnailUrl, isAdultVerified]);
 
   // Get reactions data for the modal
