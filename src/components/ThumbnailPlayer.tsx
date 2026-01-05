@@ -1,10 +1,13 @@
 // ABOUTME: Thumbnail display component for video previews in feeds
 // ABOUTME: Shows poster image with play button overlay and click-to-play functionality
 
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { Play } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { useAdultVerification, checkMediaAuth } from '@/hooks/useAdultVerification';
+import { AgeVerificationOverlay } from '@/components/AgeVerificationOverlay';
+import { verboseLog, debugError } from '@/lib/debug';
 
 interface ThumbnailPlayerProps {
   videoId: string;
@@ -18,7 +21,7 @@ interface ThumbnailPlayerProps {
 }
 
 export function ThumbnailPlayer({
-  videoId: _videoId,
+  videoId,
   src,
   thumbnailUrl,
   duration: _duration,
@@ -29,17 +32,41 @@ export function ThumbnailPlayer({
 }: ThumbnailPlayerProps) {
   const [thumbnailError, setThumbnailError] = useState(false);
   const [useVideoFallback, setUseVideoFallback] = useState(false);
+  const [requiresAuth, setRequiresAuth] = useState(false);
+  const [authRetryKey, setAuthRetryKey] = useState(0);
+  const { isVerified: isAdultVerified } = useAdultVerification();
 
-  const handleThumbnailError = () => {
-    // If image fails, try video fallback
+  // Handle age verification completion - retry thumbnail load
+  const handleAgeVerified = useCallback(() => {
+    verboseLog(`[ThumbnailPlayer ${videoId}] Age verified, retrying thumbnail load`);
+    setRequiresAuth(false);
+    setThumbnailError(false);
+    setUseVideoFallback(false);
+    setAuthRetryKey(prev => prev + 1);
+  }, [videoId]);
+
+  const handleThumbnailError = useCallback(async () => {
+    // If image fails, try video fallback first
     if (!useVideoFallback) {
       setUseVideoFallback(true);
       return;
     }
 
+    // Both image and video fallback failed - check if it's auth-related
+    const urlToCheck = thumbnailUrl || src;
+    if (urlToCheck && !isAdultVerified) {
+      verboseLog(`[ThumbnailPlayer ${videoId}] Thumbnail failed, checking if auth required`);
+      const { authorized, status } = await checkMediaAuth(urlToCheck);
+      if (!authorized && (status === 401 || status === 403)) {
+        debugError(`[ThumbnailPlayer ${videoId}] Auth required (${status})`);
+        setRequiresAuth(true);
+        return;
+      }
+    }
+
     setThumbnailError(true);
     onError?.();
-  };
+  }, [useVideoFallback, thumbnailUrl, src, isAdultVerified, videoId, onError]);
 
   const handleThumbnailLoad = (e: React.SyntheticEvent<HTMLVideoElement | HTMLImageElement>) => {
     
@@ -84,10 +111,17 @@ export function ThumbnailPlayer({
       data-testid="thumbnail-container"
       onClick={handleClick}
     >
-      {/* Thumbnail image or video */}
-      {!thumbnailError && effectiveThumbnailUrl ? (
+      {/* Age verification required (401/403) */}
+      {requiresAuth ? (
+        <AgeVerificationOverlay
+          onVerified={handleAgeVerified}
+          thumbnailUrl={thumbnailUrl}
+        />
+      ) : !thumbnailError && effectiveThumbnailUrl ? (
+        /* Thumbnail image or video */
         isVideoThumbnail || useVideoFallback ? (
           <video
+            key={`video-${authRetryKey}`}
             src={`${effectiveThumbnailUrl}#t=0.1`}
             className="w-full h-full object-cover"
             muted
@@ -100,6 +134,7 @@ export function ThumbnailPlayer({
           />
         ) : (
           <img
+            key={`img-${authRetryKey}`}
             src={effectiveThumbnailUrl}
             alt="Video thumbnail"
             className="w-full h-full object-cover"
@@ -121,18 +156,20 @@ export function ThumbnailPlayer({
         </div>
       )}
 
-      {/* Play button overlay */}
-      <div className="absolute inset-0 flex items-center justify-center bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-        <Button
-          variant="ghost"
-          size="icon"
-          className="w-16 h-16 rounded-full bg-black/50 hover:bg-black/70 text-white backdrop-blur-sm"
-          data-testid="thumbnail-play-button"
-          aria-label="Play video"
-        >
-          <Play className="h-8 w-8 ml-1" />
-        </Button>
-      </div>
+      {/* Play button overlay - only show when not showing auth overlay */}
+      {!requiresAuth && (
+        <div className="absolute inset-0 flex items-center justify-center bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="w-16 h-16 rounded-full bg-black/50 hover:bg-black/70 text-white backdrop-blur-sm"
+            data-testid="thumbnail-play-button"
+            aria-label="Play video"
+          >
+            <Play className="h-8 w-8 ml-1" />
+          </Button>
+        </div>
+      )}
 
     </div>
   );

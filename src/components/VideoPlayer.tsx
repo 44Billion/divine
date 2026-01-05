@@ -89,6 +89,7 @@ export const VideoPlayer = forwardRef<HTMLVideoElement, VideoPlayerProps>(
     const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
     const [hasError, setHasError] = useState(false);
     const [requiresAuth, setRequiresAuth] = useState(false);
+    const [authCheckPending, setAuthCheckPending] = useState(true); // Start true, set false after check completes
     const [authRetryCount, setAuthRetryCount] = useState(0);
     const [currentUrlIndex, setCurrentUrlIndex] = useState(0);
     const [allUrls, setAllUrls] = useState<string[]>([]);
@@ -512,6 +513,7 @@ export const VideoPlayer = forwardRef<HTMLVideoElement, VideoPlayerProps>(
     const handleAgeVerified = useCallback(() => {
       verboseLog(`[VideoPlayer ${videoId}] Age verified, retrying video load`);
       setRequiresAuth(false);
+      setAuthCheckPending(false); // No need to re-check, user just verified
       setIsLoading(true);
       setHasError(false);
       setAuthRetryCount(prev => prev + 1);
@@ -612,12 +614,16 @@ export const VideoPlayer = forwardRef<HTMLVideoElement, VideoPlayerProps>(
         const urlToCheck = hlsUrl || allUrls[currentUrlIndex];
         if (urlToCheck && !isAdultVerified) {
           const { authorized, status } = await checkMediaAuth(urlToCheck);
+          setAuthCheckPending(false);
           if (!authorized && (status === 401 || status === 403)) {
             verboseLog(`[VideoPlayer ${videoId}] Preflight check: auth required (${status})`);
             setRequiresAuth(true);
             setIsLoading(false);
             return false;
           }
+        } else {
+          // Already verified or no URL to check
+          setAuthCheckPending(false);
         }
         return true;
       };
@@ -865,7 +871,9 @@ export const VideoPlayer = forwardRef<HTMLVideoElement, VideoPlayerProps>(
           ref={setRefs}
           // Don't set src directly if using HLS.js - it will handle the source
           // HLS.js is used when hlsUrl is provided and Hls.isSupported()
-          poster={poster}
+          // Only show poster after auth check passes - prevents 401 errors from poster URL
+          // During auth check, blurhash provides the visual placeholder
+          poster={(requiresAuth || authCheckPending) ? undefined : poster}
           muted // Start muted, will be controlled via effect
           autoPlay={false} // Never autoplay, we control playback programmatically
           loop
