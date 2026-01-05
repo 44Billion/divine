@@ -1,7 +1,7 @@
 // ABOUTME: Video card component for displaying individual videos in feeds
 // ABOUTME: Shows video player, metadata, author info, and social interactions
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Heart, Repeat2, MessageCircle, Share, Eye, MoreVertical, Flag, UserX, Trash2, Volume2, VolumeX, Code, Users, ListPlus, Download } from 'lucide-react';
 import { nip19 } from 'nostr-tools';
@@ -37,6 +37,8 @@ import { getSafeProfileImage } from '@/lib/imageUtils';
 import type { VideoNavigationContext } from '@/hooks/useVideoNavigation';
 import { useToast } from '@/hooks/useToast';
 import { MuteType } from '@/types/moderation';
+import { checkMediaAuth, useAdultVerification } from '@/hooks/useAdultVerification';
+import { AgeVerificationOverlay } from '@/components/AgeVerificationOverlay';
 
 interface VideoCardProps {
   video: ParsedVideoData;
@@ -92,6 +94,8 @@ export function VideoCard({
   const reposterData = useAuthor(reposterPubkey || '');
   const shouldShowReposter = hasReposts && reposterPubkey;
   const [videoError, setVideoError] = useState(false);
+  const [requiresAuth, setRequiresAuth] = useState(false);
+  const { isVerified: isAdultVerified } = useAdultVerification();
   // Always start with video player visible in auto-play mode, but let VideoPlaybackContext control actual playback
   // The VideoPlayer component will only play when it's the activeVideoId (most visible)
   const [isPlaying, setIsPlaying] = useState(mode === 'auto-play');
@@ -115,6 +119,23 @@ export function VideoCard({
   const { globalMuted, setGlobalMuted } = useVideoPlayback();
   const { mutate: deleteVideo, isPending: isDeleting } = useDeleteVideo();
   const canDelete = useCanDeleteVideo(video);
+
+  // Check if video requires auth (adult verification) on mount
+  useEffect(() => {
+    if (isAdultVerified) {
+      setRequiresAuth(false);
+      return;
+    }
+
+    const urlToCheck = video.videoUrl || video.thumbnailUrl;
+    if (!urlToCheck) return;
+
+    checkMediaAuth(urlToCheck).then(({ authorized, status }) => {
+      if (!authorized && (status === 401 || status === 403)) {
+        setRequiresAuth(true);
+      }
+    });
+  }, [video.videoUrl, video.thumbnailUrl, isAdultVerified]);
 
   // Get reactions data for the modal
   const { data: reactions } = useVideoReactions(video.id, video.pubkey, video.vineId);
@@ -389,7 +410,13 @@ export function VideoCard({
               className="relative rounded-lg overflow-hidden max-h-[70vh]"
               style={{ aspectRatio: videoAspectRatio.toString() }}
             >
-              {!isPlaying ? (
+              {requiresAuth ? (
+                <AgeVerificationOverlay
+                  onVerified={() => setRequiresAuth(false)}
+                  thumbnailUrl={video.thumbnailUrl}
+                  blurhash={video.blurhash}
+                />
+              ) : !isPlaying ? (
                 <ThumbnailPlayer
                   videoId={video.id}
                   src={video.videoUrl}
