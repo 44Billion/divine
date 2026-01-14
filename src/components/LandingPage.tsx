@@ -31,18 +31,12 @@ export function LandingPage() {
             </Link>
 
             {/* Navigation Links */}
-            <div className="flex items-center gap-3 md:gap-6">
+            <div className="flex items-center gap-4 md:gap-8">
               <Link
                 to="/about"
                 className="text-xs md:text-sm font-medium text-foreground hover:text-primary transition-colors"
               >
                 About
-              </Link>
-              <Link
-                to="/faq"
-                className="text-xs md:text-sm font-medium text-foreground hover:text-primary transition-colors"
-              >
-                FAQ
               </Link>
               <a
                 href="https://about.divine.video/blog/"
@@ -50,6 +44,12 @@ export function LandingPage() {
               >
                 Blog
               </a>
+              <Link
+                to="/faq"
+                className="text-xs md:text-sm font-medium text-foreground hover:text-primary transition-colors"
+              >
+                FAQ
+              </Link>
               <a
                 href="https://about.divine.video/news/"
                 className="text-xs md:text-sm font-medium text-foreground hover:text-primary transition-colors"
@@ -59,7 +59,7 @@ export function LandingPage() {
               </a>
               <Link
                 to="/discovery"
-                className="inline-flex items-center gap-1 md:gap-1.5 px-3 py-1.5 md:px-4 md:py-2 text-xs md:text-sm font-semibold bg-primary text-white rounded-full hover:bg-primary/90 transition-colors whitespace-nowrap"
+                className="ml-2 md:ml-4 inline-flex items-center gap-1 md:gap-1.5 px-3 py-1.5 md:px-4 md:py-2 text-xs md:text-sm font-semibold bg-primary text-white rounded-full hover:bg-primary/90 transition-colors whitespace-nowrap"
               >
                 Try it
                 <svg className="w-3 h-3 md:w-4 md:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

@@ -14,13 +14,19 @@ export function MarketingHeader() {
           </Link>
 
           {/* Navigation Links */}
-          <div className="flex items-center gap-6">
+          <div className="flex items-center gap-8">
             <Link
               to="/about"
               className="text-sm font-medium text-foreground hover:text-primary transition-colors"
             >
               About
             </Link>
+            <a
+              href="https://about.divine.video/blog/"
+              className="text-sm font-medium text-foreground hover:text-primary transition-colors"
+            >
+              Blog
+            </a>
             <Link
               to="/faq"
               className="text-sm font-medium text-foreground hover:text-primary transition-colors"
@@ -28,10 +34,10 @@ export function MarketingHeader() {
               FAQ
             </Link>
             <a
-              href="https://about.divine.video/media-resources/"
+              href="https://about.divine.video/news/"
               className="text-sm font-medium text-foreground hover:text-primary transition-colors"
             >
-              Press
+              In the News
             </a>
             <Link
               to="/discovery"
