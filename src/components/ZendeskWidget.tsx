@@ -8,10 +8,16 @@ interface ZendeskWidgetProps {
   hideOnMobile?: boolean;
 }
 
+// TEMPORARILY DISABLED (Jan 24, 2026)
+// Widget went live before support team was ready. Re-enable when prepared.
+// To restore: set ZENDESK_ENABLED to true (and in Support.tsx)
+const ZENDESK_ENABLED = false;
+
 export function ZendeskWidget({ hideOnMobile = true }: ZendeskWidgetProps) {
   const { user, displayName } = useCurrentUser();
 
   useEffect(() => {
+    if (!ZENDESK_ENABLED) return;
     // Check if script already exists
     const existingScript = document.getElementById('ze-snippet');
 
