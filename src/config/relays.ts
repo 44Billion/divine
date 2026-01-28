@@ -86,16 +86,14 @@ export const PROFILE_RELAYS: RelayConfig[] = [
  */
 export const PRESET_RELAYS: RelayConfig[] = [
   {
+    url: 'wss://relay.dvines.org',
+    name: 'DVines',
+    capabilities: { nip50: true, funnelcake: true },
+  },
+  {
     url: 'wss://relay.divine.video',
     name: 'Divine',
-  },
-  {
-    url: 'wss://nyc.dvines.org',
-    name: 'NYC Divine',
-  },
-  {
-    url: 'wss://divine.diy',
-    name: 'divine.diy',
+    capabilities: { nip50: true, funnelcake: true },
   },
   {
     url: 'wss://relay.ditto.pub',
@@ -104,6 +102,7 @@ export const PRESET_RELAYS: RelayConfig[] = [
   {
     url: 'wss://relay.nostr.band',
     name: 'Nostr.Band',
+    capabilities: { nip50: true },
   },
   {
     url: 'wss://relay.damus.io',
@@ -146,8 +145,6 @@ export const toLegacyFormat = (relays: RelayConfig[]): { url: string; name: stri
 const DIVINE_FUNNELCAKE_HOSTS = [
   'relay.divine.video',
   'relay.dvines.org',
-  'nyc.dvines.org',
-  'divine.diy',
 ];
 
 /**
