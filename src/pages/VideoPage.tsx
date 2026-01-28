@@ -1,11 +1,12 @@
-import { useParams, useNavigate } from 'react-router-dom';
-import { useEffect, useCallback, useState } from 'react';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
+import { useEffect, useCallback, useState, useMemo } from 'react';
 import { useSeoMeta } from '@unhead/react';
 import { Hash, User } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { VideoCard } from '@/components/VideoCard';
-import { useVideoNavigation } from '@/hooks/useVideoNavigation';
+import { useVideoNavigation, type VideoNavigationContext } from '@/hooks/useVideoNavigation';
+import { useVideoByIdFunnelcake } from '@/hooks/useVideoByIdFunnelcake';
 import { useAuthor } from '@/hooks/useAuthor';
 import { useVideoSocialMetrics, useVideoUserInteractions } from '@/hooks/useVideoSocialMetrics';
 import { useNostrPublish } from '@/hooks/useNostrPublish';
@@ -20,18 +21,85 @@ import type { ParsedVideoData } from '@/types/video';
 
 export function VideoPage() {
   const { id } = useParams<{ id: string }>();
+  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
 
-  // All hooks must be called before any early returns
+  // Parse navigation context from URL params
+  const context: VideoNavigationContext | null = useMemo(() => {
+    const source = searchParams.get('source') as VideoNavigationContext['source'];
+    if (!source) return null;
+
+    return {
+      source,
+      hashtag: searchParams.get('hashtag') || undefined,
+      pubkey: searchParams.get('pubkey') || undefined,
+      currentIndex: searchParams.get('index') ? parseInt(searchParams.get('index')!) : undefined,
+    };
+  }, [searchParams]);
+
+  // Fast video loading via Funnelcake REST API
   const {
-    context,
-    currentVideo,
-    hasNext,
-    hasPrevious,
-    goToNext,
-    goToPrevious,
-    isLoading,
+    video: funnelcakeVideo,
+    videos: funnelcakeVideos,
+    isLoading: funnelcakeLoading,
+  } = useVideoByIdFunnelcake({
+    videoId: id || '',
+    pubkey: context?.pubkey,
+    enabled: !!id,
+  });
+
+  // Fallback to WebSocket-based navigation (slower but handles all cases)
+  const {
+    context: wsContext,
+    currentVideo: wsVideo,
+    videos: wsVideos,
+    hasNext: wsHasNext,
+    hasPrevious: wsHasPrevious,
+    goToNext: wsGoToNext,
+    goToPrevious: wsGoToPrevious,
+    isLoading: wsLoading,
   } = useVideoNavigation(id || '');
+
+  // Use Funnelcake data when available, fall back to WebSocket
+  const currentVideo = funnelcakeVideo || wsVideo;
+  const videos = funnelcakeVideos || wsVideos;
+  const isLoading = funnelcakeLoading && wsLoading;
+
+  // Calculate navigation state from available videos
+  const currentIndex = useMemo(() => {
+    if (!videos || !id) return -1;
+    return videos.findIndex(v => v.id === id || v.vineId === id);
+  }, [videos, id]);
+
+  const hasNext = currentIndex >= 0 && currentIndex < (videos?.length || 0) - 1;
+  const hasPrevious = currentIndex > 0;
+
+  // Build navigation URL
+  const buildNavigationUrl = useCallback((video: ParsedVideoData, index: number) => {
+    if (!context) return `/video/${video.id}`;
+
+    const params = new URLSearchParams({
+      source: context.source,
+      index: index.toString(),
+    });
+
+    if (context.hashtag) params.set('hashtag', context.hashtag);
+    if (context.pubkey) params.set('pubkey', context.pubkey);
+
+    return `/video/${video.id}?${params.toString()}`;
+  }, [context]);
+
+  const goToNext = useCallback(() => {
+    if (!hasNext || !videos) return;
+    const nextVideo = videos[currentIndex + 1];
+    navigate(buildNavigationUrl(nextVideo, currentIndex + 1));
+  }, [hasNext, videos, currentIndex, navigate, buildNavigationUrl]);
+
+  const goToPrevious = useCallback(() => {
+    if (!hasPrevious || !videos) return;
+    const prevVideo = videos[currentIndex - 1];
+    navigate(buildNavigationUrl(prevVideo, currentIndex - 1));
+  }, [hasPrevious, videos, currentIndex, navigate, buildNavigationUrl]);
 
   // Get author data for profile context
   const authorData = useAuthor(context?.pubkey || '');

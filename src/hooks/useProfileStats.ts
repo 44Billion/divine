@@ -37,6 +37,15 @@ export function useProfileStats(pubkey: string, videos?: ParsedVideoData[]) {
         // Calculate video count from provided videos
         const videosCount = videos?.length || 0;
 
+        // Calculate original Vine loop counts (sum of loopCount from all videos)
+        // Only videos with loopCount > 0 are considered classic Vines
+        const originalLoopCount = videos?.reduce((sum, v) => sum + (v.loopCount || 0), 0) || 0;
+        const isClassicViner = originalLoopCount > 0;
+
+        if (isClassicViner) {
+          debugLog(`[useProfileStats] Classic Viner detected with ${originalLoopCount} original loops`);
+        }
+
         // Get video IDs for social metrics calculation
         const videoIds = videos?.map(v => v.id) || [];
 
@@ -96,6 +105,8 @@ export function useProfileStats(pubkey: string, videos?: ParsedVideoData[]) {
           joinedDate,
           followersCount,
           followingCount,
+          originalLoopCount: isClassicViner ? originalLoopCount : undefined,
+          isClassicViner,
         };
 
         return stats;

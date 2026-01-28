@@ -257,13 +257,13 @@ export function SearchPage() {
                 <div className="flex flex-wrap gap-2">
                   {popularHashtags.slice(0, 8).map((hashtag) => (
                     <Button
-                      key={hashtag.tag}
+                      key={hashtag.hashtag}
                       variant="ghost"
                       size="sm"
-                      onClick={() => handleHashtagClick(hashtag.tag)}
+                      onClick={() => handleHashtagClick(hashtag.hashtag)}
                       className="h-auto px-2 py-1 text-xs"
                     >
-                      #{hashtag.tag}
+                      #{hashtag.hashtag}
                     </Button>
                   ))}
                 </div>
@@ -389,9 +389,9 @@ export function SearchPage() {
                     <div className="flex flex-wrap gap-2">
                       {hashtagResults.slice(0, 12).map((hashtag) => (
                         <HashtagCard
-                          key={hashtag.tag}
+                          key={hashtag.hashtag}
                           hashtag={hashtag}
-                          onClick={() => handleHashtagClick(hashtag.tag)}
+                          onClick={() => handleHashtagClick(hashtag.hashtag)}
                         />
                       ))}
                     </div>
@@ -481,9 +481,9 @@ export function SearchPage() {
               <div className="flex flex-wrap gap-2">
                 {hashtagResults.map((hashtag) => (
                   <HashtagCard
-                    key={hashtag.tag}
+                    key={hashtag.hashtag}
                     hashtag={hashtag}
-                    onClick={() => handleHashtagClick(hashtag.tag)}
+                    onClick={() => handleHashtagClick(hashtag.hashtag)}
                   />
                 ))}
               </div>
@@ -566,8 +566,8 @@ function HashtagCard({
       className="cursor-pointer hover:bg-secondary/80 px-3 py-1"
       onClick={onClick}
     >
-      #{hashtag.tag}
-      <span className="ml-2 text-xs opacity-70">{hashtag.count} videos</span>
+      #{hashtag.hashtag}
+      <span className="ml-2 text-xs opacity-70">{hashtag.video_count} videos</span>
     </Badge>
   );
 }

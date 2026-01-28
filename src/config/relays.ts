@@ -12,6 +12,7 @@ export interface RelayConfig {
     nip05?: boolean;  // NIP-05 verification lookups
     nip96?: boolean;  // HTTP file storage
     blossom?: boolean; // Blossom file storage
+    funnelcake?: boolean; // Funnelcake REST API support
   };
   purpose?: 'primary' | 'profile' | 'search' | 'backup';
 }
@@ -22,9 +23,9 @@ export interface RelayConfig {
  * - Primary relay for kind 34236 video events
  */
 export const PRIMARY_RELAY: RelayConfig = {
-  url: 'wss://relay.divine.video',
-  name: 'Divine',
-  capabilities: { nip50: true },
+  url: 'wss://relay.dvines.org',
+  name: 'DVines',
+  capabilities: { nip50: true, funnelcake: true },
   purpose: 'primary',
 };
 
@@ -50,6 +51,11 @@ export const PROFILE_RELAYS: RelayConfig[] = [
   {
     url: 'wss://relay.divine.video',
     name: 'Divine',
+    purpose: 'profile',
+  },
+  {
+    url: 'wss://relay.dvines.org',
+    name: 'DVines',
     purpose: 'profile',
   },
   {
@@ -133,3 +139,45 @@ export const getRelaysByPurpose = (purpose: RelayConfig['purpose']): RelayConfig
  */
 export const toLegacyFormat = (relays: RelayConfig[]): { url: string; name: string }[] =>
   relays.map(r => ({ url: r.url, name: r.name }));
+
+/**
+ * Divine infrastructure hostnames that support Funnelcake REST API
+ */
+const DIVINE_FUNNELCAKE_HOSTS = [
+  'relay.divine.video',
+  'relay.dvines.org',
+  'nyc.dvines.org',
+  'divine.diy',
+];
+
+/**
+ * Check if a relay URL supports the Funnelcake REST API
+ * Only Divine infrastructure relays have Funnelcake
+ */
+export function hasFunnelcake(relayUrl: string): boolean {
+  try {
+    // Convert wss:// to https:// for URL parsing
+    const url = new URL(relayUrl.replace('wss://', 'https://').replace('ws://', 'http://'));
+    return DIVINE_FUNNELCAKE_HOSTS.includes(url.hostname);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Get the Funnelcake REST API base URL for a relay
+ * Returns null if the relay doesn't support Funnelcake
+ */
+export function getFunnelcakeUrl(relayUrl: string): string | null {
+  if (!hasFunnelcake(relayUrl)) {
+    return null;
+  }
+  // Convert wss://relay.divine.video to https://relay.divine.video
+  return relayUrl.replace('wss://', 'https://').replace('ws://', 'http://');
+}
+
+/**
+ * Default Funnelcake API URL (relay.dvines.org is currently live)
+ * Used for classic vines which always query Divine regardless of selected relay
+ */
+export const DEFAULT_FUNNELCAKE_URL = 'https://relay.dvines.org';

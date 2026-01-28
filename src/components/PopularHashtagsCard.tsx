@@ -42,15 +42,15 @@ export function PopularHashtagsCard() {
           <div className="space-y-2">
             {popularHashtags.map((hashtag) => (
               <Button
-                key={hashtag.tag}
+                key={hashtag.hashtag}
                 variant="ghost"
                 className="w-full justify-start h-auto py-2 px-3 hover:bg-secondary"
-                onClick={() => handleHashtagClick(hashtag.tag)}
+                onClick={() => handleHashtagClick(hashtag.hashtag)}
               >
                 <div className="flex items-center justify-between w-full">
-                  <span className="font-medium">#{hashtag.tag}</span>
+                  <span className="font-medium">#{hashtag.hashtag}</span>
                   <span className="text-xs text-muted-foreground">
-                    {hashtag.count} {hashtag.count === 1 ? 'video' : 'videos'}
+                    {hashtag.video_count} {hashtag.video_count === 1 ? 'video' : 'videos'}
                   </span>
                 </div>
               </Button>

@@ -12,7 +12,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { UserPlus, UserCheck, CheckCircle, Pencil, Copy, MoreVertical, Flag } from 'lucide-react';
+import { UserPlus, UserCheck, CheckCircle, Pencil, Copy, MoreVertical, Flag, Play, Repeat } from 'lucide-react';
 import { ReportContentDialog } from '@/components/ReportContentDialog';
 import { genUserName } from '@/lib/genUserName';
 import { getSafeProfileImage } from '@/lib/imageUtils';
@@ -26,6 +26,9 @@ export interface ProfileStats {
   joinedDate: Date | null;
   followersCount: number;
   followingCount: number;
+  // Classic Vine stats (original counts from Vine era)
+  originalLoopCount?: number;  // Sum of all original Vine loop counts
+  isClassicViner?: boolean;    // Whether this user has classic Vine content
 }
 
 interface ProfileHeaderProps {
@@ -314,6 +317,39 @@ export function ProfileHeader({
           )}
         </div>
       </div>
+
+      {/* Classic Viner Stats - Original Vine Metrics */}
+      {stats?.isClassicViner && stats.originalLoopCount && stats.originalLoopCount > 0 && (
+        <div
+          className="bg-primary/5 rounded-lg p-4 border border-primary/20"
+          data-testid="classic-viner-stats"
+        >
+          <div className="flex items-center gap-2 mb-3">
+            <Repeat className="h-4 w-4 text-primary" />
+            <span className="text-sm font-medium text-primary">Classic Vine Stats</span>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="text-center">
+              <div className="flex items-center justify-center gap-1">
+                <Play className="h-4 w-4 text-muted-foreground" />
+                <span className="text-xl sm:text-2xl font-bold text-foreground">
+                  {formatNumber(stats.originalLoopCount)}
+                </span>
+              </div>
+              <div className="text-xs sm:text-sm text-muted-foreground">Original Vine Loops</div>
+            </div>
+            <div className="text-center">
+              <div className="text-xl sm:text-2xl font-bold text-foreground">
+                {formatNumber(stats.videosCount)}
+              </div>
+              <div className="text-xs sm:text-sm text-muted-foreground">Classic Vines</div>
+            </div>
+          </div>
+          <p className="text-xs text-muted-foreground mt-2 text-center">
+            Stats from the original Vine platform (2013-2017)
+          </p>
+        </div>
+      )}
 
       {/* Report User Dialog */}
       {showReportDialog && (

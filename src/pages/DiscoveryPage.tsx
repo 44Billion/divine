@@ -1,21 +1,24 @@
-// ABOUTME: Discovery feed page showing all public videos with tabs for Hot, Top, Rising, New, and Hashtags
-// ABOUTME: Each tab uses different NIP-50 sort modes for unique content discovery
+// ABOUTME: Discovery feed page showing all public videos with tabs for Classics, Hot, Rising, New, and Hashtags
+// ABOUTME: Each tab uses different sort modes; Classics uses Funnelcake REST API for pre-computed metrics
 
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { VideoFeed } from '@/components/VideoFeed';
 import { VerifiedOnlyToggle } from '@/components/VerifiedOnlyToggle';
 import { HashtagExplorer } from '@/components/HashtagExplorer';
+import { ClassicVinersRow } from '@/components/ClassicVinersRow';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Star, Clock, Hash, Flame, Zap } from 'lucide-react';
 
 export function DiscoveryPage() {
   const navigate = useNavigate();
   const params = useParams<{ tab?: string }>();
-  const allowedTabs = useMemo(() => ['top', 'hot', 'rising', 'new', 'hashtags'] as const, []);
+  const allowedTabs = useMemo(() => ['classics', 'hot', 'rising', 'new', 'hashtags'] as const, []);
   type AllowedTab = typeof allowedTabs[number];
   const routeTab = (params.tab || '').toLowerCase();
-  const initialTab: AllowedTab = (allowedTabs.includes(routeTab as AllowedTab) ? routeTab : 'top') as AllowedTab;
+  // Support legacy 'top' route by mapping to 'classics'
+  const normalizedTab = routeTab === 'top' ? 'classics' : routeTab;
+  const initialTab: AllowedTab = (allowedTabs.includes(normalizedTab as AllowedTab) ? normalizedTab : 'classics') as AllowedTab;
   const [activeTab, setActiveTab] = useState<AllowedTab>(initialTab);
   const [verifiedOnly, setVerifiedOnly] = useState(false);
 
@@ -25,15 +28,20 @@ export function DiscoveryPage() {
 
   // Sync state when URL param changes
   useEffect(() => {
-    if (allowedTabs.includes(routeTab as AllowedTab)) {
-      setActiveTab(routeTab as AllowedTab);
+    // Handle legacy 'top' route by redirecting to 'classics'
+    if (routeTab === 'top') {
+      navigate('/discovery/classics', { replace: true });
+      return;
     }
-  }, [routeTab, allowedTabs]);
+    if (allowedTabs.includes(normalizedTab as AllowedTab)) {
+      setActiveTab(normalizedTab as AllowedTab);
+    }
+  }, [routeTab, normalizedTab, allowedTabs, navigate]);
 
-  // Redirect bare /discovery to /discovery/top to make tab part of URL
+  // Redirect bare /discovery to /discovery/classics to make tab part of URL
   useEffect(() => {
     if (!params.tab) {
-      navigate('/discovery/top', { replace: true });
+      navigate('/discovery/classics', { replace: true });
     }
   }, [params.tab, navigate]);
 
@@ -66,7 +74,7 @@ export function DiscoveryPage() {
           className="space-y-6"
         >
           <TabsList className="w-full grid grid-cols-5 gap-1">
-            <TabsTrigger value="top" className="gap-1.5 sm:gap-2">
+            <TabsTrigger value="classics" className="gap-1.5 sm:gap-2">
               <Star className="h-4 w-4" />
               <span className="hidden sm:inline">Classic</span>
             </TabsTrigger>
@@ -88,14 +96,17 @@ export function DiscoveryPage() {
             </TabsTrigger>
           </TabsList>
 
-          <TabsContent value="top" className="mt-0 space-y-6">
+          <TabsContent value="classics" className="mt-0 space-y-6">
+            {/* Classic Viners horizontal row */}
+            <ClassicVinersRow />
+
+            {/* Classic Vines feed - uses Funnelcake API */}
             <VideoFeed
-              feedType="trending"
-              sortMode="top"
+              feedType="classics"
               verifiedOnly={verifiedOnly}
-              data-testid="video-feed-top"
+              data-testid="video-feed-classics"
               className="space-y-6"
-              key="top"
+              key="classics"
             />
           </TabsContent>
 

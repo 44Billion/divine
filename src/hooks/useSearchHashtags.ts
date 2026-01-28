@@ -14,8 +14,8 @@ interface UseSearchHashtagsOptions {
 }
 
 interface HashtagResult {
-  tag: string;
-  count: number;
+  hashtag: string;
+  video_count: number;
 }
 
 /**
@@ -46,11 +46,11 @@ function filterHashtagsByQuery(hashtags: HashtagResult[], query: string): Hashta
   if (!query.trim()) {
     return hashtags;
   }
-  
+
   const searchValue = query.toLowerCase();
-  
+
   return hashtags.filter(hashtag =>
-    hashtag.tag.toLowerCase().includes(searchValue)
+    hashtag.hashtag.toLowerCase().includes(searchValue)
   );
 }
 
@@ -98,13 +98,13 @@ export function useSearchHashtags(options: UseSearchHashtagsOptions) {
 
       // Convert to array and sort by usage count
       const allHashtags: HashtagResult[] = Array.from(hashtagCounts.entries())
-        .map(([tag, count]) => ({ tag, count }))
+        .map(([hashtag, video_count]) => ({ hashtag, video_count }))
         .sort((a, b) => {
           // Sort by count descending, then alphabetically
-          if (a.count !== b.count) {
-            return b.count - a.count;
+          if (a.video_count !== b.video_count) {
+            return b.video_count - a.video_count;
           }
-          return a.tag.localeCompare(b.tag);
+          return a.hashtag.localeCompare(b.hashtag);
         });
       
       // Filter by search query

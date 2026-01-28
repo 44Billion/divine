@@ -1,5 +1,5 @@
 // ABOUTME: Video feed component for displaying scrollable lists of videos with infinite scroll
-// ABOUTME: Uses optimized useInfiniteVideos hook with NIP-50 search and cursor pagination
+// ABOUTME: Uses video provider hook with automatic Funnelcake/WebSocket selection
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { performanceMonitor } from '@/lib/performanceMonitoring';
@@ -7,7 +7,7 @@ import { Video } from 'lucide-react';
 import { VideoCard } from '@/components/VideoCard';
 import { VideoGrid } from '@/components/VideoGrid';
 import { AddToListDialog } from '@/components/AddToListDialog';
-import { useInfiniteVideos } from '@/hooks/useInfiniteVideos';
+import { useVideoProvider } from '@/hooks/useVideoProvider';
 import { useBatchedAuthors } from '@/hooks/useBatchedAuthors';
 import { useDeferredVideoMetrics } from '@/hooks/useDeferredVideoMetrics';
 import { useOptimisticLike } from '@/hooks/useOptimisticLike';
@@ -27,7 +27,7 @@ import { useNavigate } from 'react-router-dom';
 type ViewMode = 'feed' | 'grid';
 
 interface VideoFeedProps {
-  feedType?: 'discovery' | 'home' | 'trending' | 'hashtag' | 'profile' | 'recent';
+  feedType?: 'discovery' | 'home' | 'trending' | 'hashtag' | 'profile' | 'recent' | 'classics';
   hashtag?: string;
   pubkey?: string;
   limit?: number;
@@ -67,21 +67,27 @@ export function VideoFeed({
   const { openLoginDialog } = useLoginDialog();
   const navigate = useNavigate();
 
-  // Use new infinite scroll hook with NIP-50 support
+  // Use video provider hook - automatically selects Funnelcake or WebSocket
   const {
     data,
     fetchNextPage,
     hasNextPage,
     isLoading,
     error,
-    refetch
-  } = useInfiniteVideos({
+    refetch,
+    dataSource,
+  } = useVideoProvider({
     feedType,
     hashtag,
     pubkey,
     pageSize: limit,
     sortMode,
   });
+
+  // Log data source for debugging
+  useEffect(() => {
+    debugLog(`[VideoFeed] Using ${dataSource} for ${feedType} feed`);
+  }, [dataSource, feedType]);
 
   // Flatten all pages into single array
   const allVideos = useMemo(() =>
@@ -269,8 +275,8 @@ export function VideoFeed({
         <Card className="border-dashed border-2 border-primary/20 bg-primary/5">
           <CardContent className="py-16 px-8 text-center">
             <div className="max-w-md mx-auto space-y-6">
-              {/* Show reclining Divine image for discovery/trending feeds when no videos */}
-              {(feedType === 'discovery' || feedType === 'trending') && !allFiltered ? (
+              {/* Show reclining Divine image for discovery/trending/classics feeds when no videos */}
+              {(feedType === 'discovery' || feedType === 'trending' || feedType === 'classics') && !allFiltered ? (
                 <>
                   <div className="mx-auto -mx-8 -mt-16">
                     <img

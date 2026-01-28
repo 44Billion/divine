@@ -3,6 +3,29 @@
 All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
+- **FEATURE**: Funnelcake REST API integration for faster video loading
+  - New `funnelcakeClient.ts` - REST API client with circuit breaker health tracking
+  - New `funnelcakeTransform.ts` - transforms API responses to ParsedVideoData format
+  - New `useInfiniteVideosFunnelcake` hook for paginated video feeds via REST
+  - New `useVideoProvider` hook that auto-selects Funnelcake vs WebSocket based on relay
+  - New `useVideoByIdFunnelcake` hook for fast single-video lookups on VideoPage
+  - VideoPage now loads via REST first, falls back to WebSocket (faster initial load)
+- **FEATURE**: Classic Viner profile stats
+  - ProfileHeader now shows "Classic Vine Stats" section for users with migrated Vines
+  - Displays original Vine loop counts (total loops from all videos)
+  - Shows count of classic Vines from the original platform (2013-2017)
+- **FEATURE**: Classic Viners row on Discovery page
+  - New `ClassicVinersRow` component showing popular Vine creators
+  - Horizontal scrollable avatars with links to creator profiles
+  - Fetches from Funnelcake `/api/viners` endpoint with fallback to video extraction
+- **IMPROVEMENT**: Video cards display cached author names/avatars from Funnelcake
+  - Added `authorName` and `authorAvatar` fields to ParsedVideoData
+  - VideoCard prefers real Nostr profile, falls back to cached Funnelcake data
+  - Eliminates "MysticComet590" placeholder names for classic Viners
+- **CONFIG**: Switch primary relay from relay.divine.video to relay.dvines.org
+  - Updated PRIMARY_RELAY in relays.ts
+  - Added relay.dvines.org to PROFILE_RELAYS for kind 0 profile queries
+  - Added `hasFunnelcake()` and `getFunnelcakeUrl()` helpers for relay capability detection
 - **BUGFIX**: Fix .well-known files (assetlinks.json, apple-app-site-association) returning 404 on divine.video
   - Added `_routes.json` to exclude `.well-known/*` from Pages Functions routing
   - Updated `functions/[[path]].ts` to pass through `.well-known` paths directly

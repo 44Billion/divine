@@ -67,6 +67,8 @@ export interface RepostMetadata {
 export interface ParsedVideoData {
   id: string;                // Original video event ID
   pubkey: string;            // Original author pubkey
+  authorName?: string;       // Cached author name from Funnelcake API
+  authorAvatar?: string;     // Cached author avatar from Funnelcake API
   kind: typeof SHORT_VIDEO_KIND;   // // NIP-71 video kind (34236).
   createdAt: number;
   originalVineTimestamp?: number; // Custom published_at timestamp (NIP-31 - can be set by any video)

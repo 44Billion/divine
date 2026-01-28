@@ -15,7 +15,7 @@ import { EditProfileDialog } from '@/components/EditProfileDialog';
 import { FollowListSafetyDialog } from '@/components/FollowListSafetyDialog';
 import { useAuthor } from '@/hooks/useAuthor';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
-import { useVideoEvents } from '@/hooks/useVideoEvents';
+import { useVideoProvider } from '@/hooks/useVideoProvider';
 import { useProfileStats } from '@/hooks/useProfileStats';
 import { useFollowRelationship, useFollowUser, useUnfollowUser } from '@/hooks/useFollowRelationship';
 import { useFollowListSafetyCheck } from '@/hooks/useFollowListSafetyCheck';
@@ -62,13 +62,28 @@ export function ProfilePage() {
   // Fetch profile data
   const { data: authorData } = useAuthor(pubkey || '');
   const author = pubkey ? enhanceAuthorData(authorData, pubkey) : null;
-  const metadata = author?.metadata;
 
-  // Fetch ALL videos for profile (no limit)
-  const { data: videos, isLoading: videosLoading, error: videosError } = useVideoEvents({
+  // Fetch videos for profile using Funnelcake (has authorName/authorAvatar)
+  const { data: videosData, isLoading: videosLoading, error: videosError } = useVideoProvider({
     feedType: 'profile',
     pubkey: pubkey || '',
+    enabled: !!pubkey,
   });
+  const videos = videosData?.pages?.flatMap(p => p.videos) || [];
+
+  // Extract author info from videos if no Nostr profile exists
+  // Funnelcake videos include cached author_name/author_avatar
+  const cachedAuthorName = videos?.[0]?.authorName;
+  const cachedAuthorAvatar = videos?.[0]?.authorAvatar;
+  const hasRealProfile = authorData?.event && authorData?.metadata?.name;
+
+  // Prefer real Nostr profile, fall back to cached Funnelcake data, then generated
+  const metadata = author?.metadata ? {
+    ...author.metadata,
+    display_name: hasRealProfile ? author.metadata.display_name : (cachedAuthorName || author.metadata.display_name),
+    name: hasRealProfile ? author.metadata.name : (cachedAuthorName || author.metadata.name),
+    picture: hasRealProfile ? author.metadata.picture : (cachedAuthorAvatar || author.metadata.picture),
+  } : undefined;
 
   // Fetch profile statistics - pass videos to calculate totalViews
   const { data: stats, isLoading: statsLoading } = useProfileStats(pubkey || '', videos);
