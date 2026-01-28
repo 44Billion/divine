@@ -386,27 +386,28 @@ function isSocialMediaCrawler(request) {
  */
 async function fetchVideoMetadata(videoId) {
   try {
-    // Fetch from Funnelcake API via backend
-    const response = await fetch(`https://relay.dvines.org/api/videos?limit=100`, {
+    // Use bulk endpoint to fetch specific video by ID
+    const response = await fetch(`https://relay.dvines.org/api/videos/bulk`, {
       backend: 'funnelcake',
+      method: 'POST',
       headers: {
         'Accept': 'application/json',
+        'Content-Type': 'application/json',
         'Host': 'relay.dvines.org',
       },
+      body: JSON.stringify({ event_ids: [videoId] }),
     });
 
     if (!response.ok) {
-      console.log('Funnelcake API returned:', response.status);
+      console.log('Funnelcake bulk API returned:', response.status);
       return null;
     }
 
-    const videos = await response.json();
-
-    // Find video by ID or d_tag
-    const video = videos.find(v => v.id === videoId || v.d_tag === videoId);
+    const result = await response.json();
+    const video = result.videos?.[0];
 
     if (!video) {
-      console.log('Video not found in API response:', videoId);
+      console.log('Video not found via bulk API:', videoId);
       return null;
     }
 
