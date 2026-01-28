@@ -410,12 +410,30 @@ async function fetchVideoMetadata(videoId) {
       return null;
     }
 
+    // Build a rich description with engagement stats
+    const stats = [];
+    if (video.reactions > 0) stats.push(`${video.reactions} ❤️`);
+    if (video.comments > 0) stats.push(`${video.comments} 💬`);
+    if (video.reposts > 0) stats.push(`${video.reposts} 🔁`);
+
+    let description;
+    if (video.content && video.content.trim()) {
+      // Use the content/caption if available
+      description = video.content.trim();
+    } else if (stats.length > 0) {
+      // Show engagement stats
+      description = `${stats.join(' • ')} on diVine`;
+    } else {
+      description = 'Watch this short video on diVine';
+    }
+
     return {
       title: video.title || 'Video on diVine',
-      description: video.title || 'Watch this video on diVine',
+      description: description,
       thumbnail: video.thumbnail || 'https://divine.video/og.avif',
-      authorName: video.author_name || 'diVine creator',
-      loops: video.loops || 0,
+      authorName: video.author_name || '',
+      reactions: video.reactions || 0,
+      comments: video.comments || 0,
     };
   } catch (err) {
     console.error('Failed to fetch video metadata:', err.message);
