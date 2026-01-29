@@ -22,7 +22,6 @@ import { useFollowRelationship, useFollowUser, useUnfollowUser } from '@/hooks/u
 import { useFollowListSafetyCheck } from '@/hooks/useFollowListSafetyCheck';
 import { useLoginDialog } from '@/contexts/LoginDialogContext';
 import { genUserName } from '@/lib/genUserName';
-import { enhanceAuthorData } from '@/lib/generateProfile';
 import { debugLog } from '@/lib/debug';
 
 export function ProfilePage() {
@@ -61,11 +60,10 @@ export function ProfilePage() {
   }
 
   // Fetch profile data from Funnelcake REST API (fast) - includes profile metadata AND stats
-  const { data: funnelcakeProfile } = useFunnelcakeProfile(pubkey || '', !!pubkey);
+  const { data: funnelcakeProfile, isLoading: funnelcakeLoading } = useFunnelcakeProfile(pubkey || '', !!pubkey);
 
   // Fetch profile data from Nostr relays (slower, but more authoritative)
   const { data: authorData } = useAuthor(pubkey || '');
-  const author = pubkey ? enhanceAuthorData(authorData, pubkey) : null;
 
   // Fetch videos for profile using Funnelcake (fast, includes cached author data)
   const { data: videosData, isLoading: videosLoading, error: videosError } = useVideoProvider({
@@ -75,40 +73,37 @@ export function ProfilePage() {
   });
   const videos = videosData?.pages?.flatMap(p => p.videos) || [];
 
-  // Check if we have a real Nostr profile
-  const hasRealProfile = authorData?.event && authorData?.metadata?.name;
+  // Check if we have a real Nostr profile (kind 0 event with actual name)
+  const hasNostrProfile = authorData?.event && authorData?.metadata?.name;
 
   // Priority order for profile data:
   // 1. Real Nostr profile (kind 0) - most authoritative
   // 2. Funnelcake profile data - fast REST API with cached metadata
-  // 3. Generated placeholder - last resort
-  const metadata = author?.metadata ? {
-    ...author.metadata,
-    display_name: hasRealProfile
-      ? author.metadata.display_name
-      : (funnelcakeProfile?.display_name || funnelcakeProfile?.name || author.metadata.display_name),
-    name: hasRealProfile
-      ? author.metadata.name
-      : (funnelcakeProfile?.name || author.metadata.name),
-    picture: hasRealProfile
-      ? author.metadata.picture
-      : (funnelcakeProfile?.picture || author.metadata.picture),
-    about: hasRealProfile
-      ? author.metadata.about
-      : (funnelcakeProfile?.about || author.metadata.about),
-    banner: hasRealProfile
-      ? author.metadata.banner
-      : (funnelcakeProfile?.banner || author.metadata.banner),
-    nip05: hasRealProfile
-      ? author.metadata.nip05
-      : (funnelcakeProfile?.nip05 || author.metadata.nip05),
-    website: hasRealProfile
-      ? author.metadata.website
-      : (funnelcakeProfile?.website || author.metadata.website),
-    lud16: hasRealProfile
-      ? author.metadata.lud16
-      : (funnelcakeProfile?.lud16 || author.metadata.lud16),
-  } : undefined;
+  // 3. NO PLACEHOLDERS - just show what we have or nothing
+  const metadata = hasNostrProfile ? {
+    // Use Nostr data when available
+    display_name: authorData.metadata?.display_name,
+    name: authorData.metadata?.name,
+    picture: authorData.metadata?.picture || funnelcakeProfile?.picture || '/user-avatar.png',
+    about: authorData.metadata?.about,
+    banner: authorData.metadata?.banner,
+    nip05: authorData.metadata?.nip05,
+    website: authorData.metadata?.website,
+    lud16: authorData.metadata?.lud16,
+  } : funnelcakeProfile ? {
+    // Fall back to Funnelcake data (fast)
+    display_name: funnelcakeProfile.display_name,
+    name: funnelcakeProfile.name,
+    picture: funnelcakeProfile.picture || '/user-avatar.png',
+    about: funnelcakeProfile.about,
+    banner: funnelcakeProfile.banner,
+    nip05: funnelcakeProfile.nip05,
+    website: funnelcakeProfile.website,
+    lud16: funnelcakeProfile.lud16,
+  } : funnelcakeLoading ? undefined : {
+    // No data available - just use default avatar, no fake names
+    picture: '/user-avatar.png',
+  };
 
   // Fetch profile statistics - use Funnelcake stats as fallback, then compute from videos
   const { data: nostrStats, isLoading: statsLoading } = useProfileStats(pubkey || '', videos);

@@ -2,6 +2,7 @@
 // ABOUTME: Displays user metadata, social stats, and follow/unfollow functionality
 
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
@@ -14,7 +15,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { UserPlus, UserCheck, CheckCircle, Pencil, Copy, MoreVertical, Flag, Play, Repeat } from 'lucide-react';
 import { ReportContentDialog } from '@/components/ReportContentDialog';
-import { genUserName } from '@/lib/genUserName';
+import { useNip05Validation } from '@/hooks/useNip05Validation';
 import { getSafeProfileImage } from '@/lib/imageUtils';
 import { toast } from '@/hooks/useToast';
 import { nip19 } from 'nostr-tools';
@@ -77,12 +78,23 @@ export function ProfileHeader({
 }: ProfileHeaderProps) {
   const [showReportDialog, setShowReportDialog] = useState(false);
 
-  // Show loading text if metadata hasn't loaded yet
-  const displayName = metadata?.display_name || metadata?.name || (!metadata ? "Loading profile..." : genUserName(pubkey));
-  const userName = metadata?.name || (!metadata ? "Loading profile..." : genUserName(pubkey));
+  // Validate NIP-05 - only show if validation passes
+  const { isValid: nip05Valid, nip05: validatedNip05 } = useNip05Validation(
+    metadata?.nip05,
+    pubkey
+  );
+
+  // Get npub for fallback display
+  const npub = nip19.npubEncode(pubkey);
+  const shortNpub = `${npub.slice(0, 8)}...${npub.slice(-4)}`;
+
+  // Don't show generated placeholder names - show real data or truncated npub
+  // Only use display_name/name if they exist in metadata (not generated)
+  const hasRealName = metadata?.display_name || metadata?.name;
+  const displayName = hasRealName || shortNpub;
+  const userName = metadata?.name;
   const profileImage = getSafeProfileImage(metadata?.picture) || '/user-avatar.png';
   const about = metadata?.about;
-  const nip05 = metadata?.nip05;
   const website = metadata?.website;
 
   const handleFollowClick = () => {
@@ -142,18 +154,25 @@ export function ProfileHeader({
                   <Copy className="h-4 w-4" />
                 </Button>
               </div>
-              {nip05 ? (
+              {/* Only show NIP-05 if validated */}
+              {nip05Valid && validatedNip05 ? (
                 <div className="flex items-center gap-1 justify-center sm:justify-start">
                   <CheckCircle className="h-4 w-4 text-primary" />
-                  <p className="text-muted-foreground text-sm font-medium">{nip05}</p>
+                  <Link
+                    to={`/u/${encodeURIComponent(validatedNip05)}`}
+                    className="text-primary text-sm font-medium hover:underline"
+                  >
+                    {/* Format NIP-05 for display: _@domain → @domain, user@domain → @user@domain */}
+                    {validatedNip05.startsWith('_@') ? `@${validatedNip05.slice(2)}` : `@${validatedNip05}`}
+                  </Link>
                 </div>
-              ) : userName !== displayName ? (
+              ) : userName && userName !== displayName ? (
                 <p className="text-muted-foreground text-sm">@{userName}</p>
               ) : null}
             </div>
 
-            {/* Website */}
-            {website && (
+            {/* Website - hide if it's just a divine.video profile URL */}
+            {website && !website.includes('divine.video/profile/') && (
               <div className="flex flex-wrap gap-2 justify-center sm:justify-start">
                 <Badge variant="outline" className="text-xs">
                   <a href={website} target="_blank" rel="noopener noreferrer" className="hover:underline">
