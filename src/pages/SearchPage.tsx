@@ -20,7 +20,7 @@ import { Loader2 } from 'lucide-react';
 import InfiniteScroll from 'react-infinite-scroll-component';
 import { useInfiniteSearchVideos } from '@/hooks/useInfiniteSearchVideos';
 import { useSearchUsers } from '@/hooks/useSearchUsers';
-import { useSearchHashtags } from '@/hooks/useSearchHashtags';
+import { useSearchHashtags, type HashtagResult } from '@/hooks/useSearchHashtags';
 import { genUserName } from '@/lib/genUserName';
 import { getSafeProfileImage } from '@/lib/imageUtils';
 import type { SortMode } from '@/types/nostr';

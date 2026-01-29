@@ -6,9 +6,10 @@ import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Hash, Search, Play, Loader2 } from 'lucide-react';
+import { Hash, TrendingUp, Search, BarChart, Play, Loader2 } from 'lucide-react';
 import { fetchPopularHashtags } from '@/lib/funnelcakeClient';
 import { DEFAULT_FUNNELCAKE_URL } from '@/config/relays';
 import { useHashtagThumbnail } from '@/hooks/useHashtagThumbnail';
@@ -116,35 +117,63 @@ function HashtagCard({ stat }: { stat: HashtagStats }) {
   );
 }
 
+const INITIAL_LOAD = 20;
+const LOAD_MORE_COUNT = 20;
+
 export function HashtagExplorer() {
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState<'top50' | 'all'>('top50');
+  const [visibleCount, setVisibleCount] = useState(INITIAL_LOAD);
+  const loadMoreRef = useRef<HTMLDivElement>(null);
   const { data: hashtagStats, isLoading, error } = useHashtagStats();
 
-  const filteredAndSortedTags = useMemo(() => {
+  // Filter hashtags based on search
+  const filteredTags = useMemo(() => {
     if (!hashtagStats) return [];
 
-    let filtered = hashtagStats;
-
-    // Apply search filter
     if (searchTerm) {
       const search = searchTerm.toLowerCase();
-      filtered = filtered.filter(stat =>
-        stat.tag.includes(search)
-      );
+      return hashtagStats.filter(stat => stat.tag.includes(search));
     }
 
-    // Apply category filtering
-    const sorted = [...filtered];
-    switch (selectedCategory) {
-      case 'top50':
-        // Show only top 50 by rank
-        return sorted.slice(0, 50);
-      case 'all':
-        // Show more tags, still limited for performance
-        return sorted.slice(0, 200);
+    return hashtagStats;
+  }, [hashtagStats, searchTerm]);
+
+  // Get visible subset
+  const visibleTags = useMemo(() => {
+    return filteredTags.slice(0, visibleCount);
+  }, [filteredTags, visibleCount]);
+
+  const hasMore = visibleCount < filteredTags.length;
+
+  // Load more when sentinel comes into view
+  const loadMore = useCallback(() => {
+    if (hasMore) {
+      setVisibleCount(prev => Math.min(prev + LOAD_MORE_COUNT, filteredTags.length));
     }
-  }, [hashtagStats, searchTerm, selectedCategory]);
+  }, [hasMore, filteredTags.length]);
+
+  // Reset visible count when search changes
+  useEffect(() => {
+    setVisibleCount(INITIAL_LOAD);
+  }, [searchTerm]);
+
+  // Intersection Observer for infinite scroll
+  useEffect(() => {
+    const sentinel = loadMoreRef.current;
+    if (!sentinel) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && hasMore) {
+          loadMore();
+        }
+      },
+      { rootMargin: '200px' }
+    );
+
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [hasMore, loadMore]);
 
   if (error) {
     return (
@@ -169,37 +198,17 @@ export function HashtagExplorer() {
         </p>
       </div>
 
-      {/* Search and Filters */}
+      {/* Search */}
       <Card>
         <CardContent className="p-4">
-          <div className="flex flex-col sm:flex-row gap-4">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Search hashtags..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-9"
-              />
-            </div>
-            <div className="flex gap-2">
-              <Button
-                variant={selectedCategory === 'top50' ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => setSelectedCategory('top50')}
-              >
-                <TrendingUp className="h-4 w-4 mr-1" />
-                Top 50
-              </Button>
-              <Button
-                variant={selectedCategory === 'all' ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => setSelectedCategory('all')}
-              >
-                <BarChart className="h-4 w-4 mr-1" />
-                Top 200
-              </Button>
-            </div>
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Search hashtags..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pl-9"
+            />
           </div>
         </CardContent>
       </Card>
@@ -216,7 +225,7 @@ export function HashtagExplorer() {
             </Card>
           ))}
         </div>
-      ) : filteredAndSortedTags.length === 0 ? (
+      ) : visibleTags.length === 0 ? (
         <Card className="border-dashed">
           <CardContent className="py-12 text-center">
             <Hash className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
@@ -226,20 +235,24 @@ export function HashtagExplorer() {
           </CardContent>
         </Card>
       ) : (
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-          {filteredAndSortedTags.map((stat) => (
-            <HashtagCard key={stat.tag} stat={stat} />
-          ))}
-        </div>
-      )}
+        <>
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+            {visibleTags.map((stat) => (
+              <HashtagCard key={stat.tag} stat={stat} />
+            ))}
+          </div>
 
-      {/* Load More */}
-      {filteredAndSortedTags.length > 0 && (
-        <div className="text-center">
-          <p className="text-sm text-muted-foreground">
-            Showing {filteredAndSortedTags.length} of 1,000 hashtags
-          </p>
-        </div>
+          {/* Infinite scroll sentinel */}
+          <div ref={loadMoreRef} className="py-8 flex justify-center">
+            {hasMore ? (
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                Showing all {filteredTags.length} hashtags
+              </p>
+            )}
+          </div>
+        </>
       )}
     </div>
   );
