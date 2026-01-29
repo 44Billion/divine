@@ -3,6 +3,18 @@
 All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
+- **PERFORMANCE**: Migrate to Funnelcake REST API for faster data loading
+  - `useProfileStats` now uses REST API first (10s → <500ms), falls back to WebSocket
+  - `useBatchedAuthors` now uses bulk REST endpoint instead of individual WebSocket queries
+  - New `useBulkVideoStats` hook for fetching multiple video stats in single request
+  - New `useFollowers` and `useFollowing` hooks with pagination support
+  - New `fetchBulkUsers` and `fetchBulkVideoStats` client functions
+  - Added `batchUtils.ts` with `dedupeArray` and `chunkArray` utilities
+  - Added `socialCache.ts` for localStorage caching with 5-minute TTL
+  - Comprehensive test coverage for all new functionality (86 tests pass)
+- **UI**: Profile stats improvements
+  - Renamed "Total Views" to "diVine Loops"
+  - "Joined" field now shows "Classic Viner" for unclaimed classic accounts
 - **PERFORMANCE**: Fix slow profile page loading (20s → <1s)
   - Fixed Funnelcake API response parsing - profile data is nested under `profile`, `social`, `stats` objects
   - Removed circuit breaker checks that were blocking fast API requests

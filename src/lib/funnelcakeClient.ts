@@ -620,3 +620,178 @@ export async function fetchUserProfile(
     return null;
   }
 }
+
+/**
+ * Response from POST /api/users/bulk endpoint
+ */
+export interface FunnelcakeBulkUsersResponse {
+  users: Array<{
+    pubkey: string;
+    profile?: {
+      name?: string;
+      display_name?: string;
+      picture?: string;
+      banner?: string;
+      about?: string;
+      nip05?: string;
+      lud16?: string;
+      website?: string;
+    };
+    social?: {
+      follower_count: number;
+      following_count: number;
+    };
+    stats?: {
+      video_count: number;
+    };
+  }>;
+  missing: string[];
+}
+
+/**
+ * Response from POST /api/videos/stats/bulk endpoint
+ */
+export interface FunnelcakeBulkStatsResponse {
+  stats: Array<{
+    id: string;
+    reactions: number;
+    comments: number;
+    reposts: number;
+    loops?: number;
+    engagement_score?: number;
+    trending_score?: number;
+  }>;
+  missing: string[];
+}
+
+/**
+ * Fetch multiple user profiles in bulk via POST /api/users/bulk
+ * Much more efficient than individual requests for feeds and lists
+ *
+ * @param apiUrl - Base URL of the Funnelcake API
+ * @param pubkeys - Array of user public keys (hex)
+ * @param signal - Optional abort signal
+ * @returns Promise with users array and missing pubkeys
+ */
+export async function fetchBulkUsers(
+  apiUrl: string = API_CONFIG.funnelcake.baseUrl,
+  pubkeys: string[],
+  signal?: AbortSignal
+): Promise<FunnelcakeBulkUsersResponse> {
+  // Return early for empty input
+  if (pubkeys.length === 0) {
+    return { users: [], missing: [] };
+  }
+
+  debugLog(`[FunnelcakeClient] fetchBulkUsers: ${pubkeys.length} pubkeys`);
+
+  const timeout = API_CONFIG.funnelcake.timeout;
+  const timeoutSignal = AbortSignal.timeout(timeout);
+  const combinedSignal = signal
+    ? AbortSignal.any([signal, timeoutSignal])
+    : timeoutSignal;
+
+  try {
+    const response = await fetch(`${apiUrl}/api/users/bulk`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pubkeys }),
+      signal: combinedSignal,
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => 'Unknown error');
+      recordFunnelcakeFailure(apiUrl, `HTTP ${response.status}`);
+      throw new FunnelcakeApiError(
+        `Funnelcake bulk users error: ${response.status} ${response.statusText}`,
+        response.status,
+        errorText
+      );
+    }
+
+    const data = await response.json();
+    recordFunnelcakeSuccess(apiUrl);
+
+    debugLog(`[FunnelcakeClient] Got ${data.users?.length || 0} users, ${data.missing?.length || 0} missing`);
+
+    return {
+      users: data.users || [],
+      missing: data.missing || [],
+    };
+  } catch (err) {
+    if (err instanceof FunnelcakeApiError) {
+      throw err;
+    }
+
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    recordFunnelcakeFailure(apiUrl, message);
+    debugError(`[FunnelcakeClient] fetchBulkUsers failed: ${message}`);
+    throw new FunnelcakeApiError(message, null, undefined);
+  }
+}
+
+/**
+ * Fetch statistics for multiple videos in bulk via POST /api/videos/stats/bulk
+ * Much more efficient than individual fetchVideoStats calls
+ *
+ * @param apiUrl - Base URL of the Funnelcake API
+ * @param eventIds - Array of video event IDs (hex)
+ * @param signal - Optional abort signal
+ * @returns Promise with stats array and missing event IDs
+ */
+export async function fetchBulkVideoStats(
+  apiUrl: string = API_CONFIG.funnelcake.baseUrl,
+  eventIds: string[],
+  signal?: AbortSignal
+): Promise<FunnelcakeBulkStatsResponse> {
+  // Return early for empty input
+  if (eventIds.length === 0) {
+    return { stats: [], missing: [] };
+  }
+
+  debugLog(`[FunnelcakeClient] fetchBulkVideoStats: ${eventIds.length} event IDs`);
+
+  const timeout = API_CONFIG.funnelcake.timeout;
+  const timeoutSignal = AbortSignal.timeout(timeout);
+  const combinedSignal = signal
+    ? AbortSignal.any([signal, timeoutSignal])
+    : timeoutSignal;
+
+  try {
+    const response = await fetch(`${apiUrl}/api/videos/stats/bulk`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ event_ids: eventIds }),
+      signal: combinedSignal,
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => 'Unknown error');
+      recordFunnelcakeFailure(apiUrl, `HTTP ${response.status}`);
+      throw new FunnelcakeApiError(
+        `Funnelcake bulk stats error: ${response.status} ${response.statusText}`,
+        response.status,
+        errorText
+      );
+    }
+
+    const data = await response.json();
+    recordFunnelcakeSuccess(apiUrl);
+
+    debugLog(`[FunnelcakeClient] Got ${data.stats?.length || 0} stats, ${data.missing?.length || 0} missing`);
+
+    return {
+      stats: data.stats || [],
+      missing: data.missing || [],
+    };
+  } catch (err) {
+    if (err instanceof FunnelcakeApiError) {
+      throw err;
+    }
+
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    recordFunnelcakeFailure(apiUrl, message);
+    debugError(`[FunnelcakeClient] fetchBulkVideoStats failed: ${message}`);
+    throw new FunnelcakeApiError(message, null, undefined);
+  }
+}

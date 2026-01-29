@@ -45,9 +45,9 @@ export function createCachedNostr<T extends NostrClient>(
     }
 
     // 2. Query via WebSocket
-    const wsStart = performance.now();
+    const _wsStart = performance.now();
     const results = await baseNostr.query(filters, opts);
-    // debugLog(`[CachedNostr] WebSocket returned ${results.length} events in ${(performance.now() - wsStart).toFixed(0)}ms`);
+    // debugLog(`[CachedNostr] WebSocket returned ${results.length} events in ${(performance.now() - _wsStart).toFixed(0)}ms`);
 
     // Cache the results if cacheable
     if (isCacheable && results.length > 0) {

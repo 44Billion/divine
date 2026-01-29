@@ -19,7 +19,7 @@ interface HashtagStats {
   rank: number;
 }
 
-interface HashtagWithThumbnail extends HashtagStats {
+interface _HashtagWithThumbnail extends HashtagStats {
   thumbnailUrl?: string;
 }
 
@@ -143,7 +143,7 @@ function useHashtagThumbnails(hashtags: string[]) {
   });
 
   // Identify duplicates that need more videos
-  const { duplicateTags, urlToFirstTag } = useMemo(() => {
+  const { duplicateTags, urlToFirstTag: _urlToFirstTag } = useMemo(() => {
     const urlToFirstTag = new Map<string, string>();
     const duplicateTags: string[] = [];
 

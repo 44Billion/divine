@@ -25,7 +25,7 @@ interface FullscreenFeedProps {
 // Wrapper component to provide metrics for each video
 function FullscreenVideoWithMetrics({
   video,
-  index,
+  index: _index,
   isActive,
   onBack,
 }: {

@@ -52,13 +52,13 @@ export function VideoPage() {
 
   // Fallback to WebSocket-based navigation (slower but handles all cases)
   const {
-    context: wsContext,
+    context: _wsContext,
     currentVideo: wsVideo,
     videos: wsVideos,
-    hasNext: wsHasNext,
-    hasPrevious: wsHasPrevious,
-    goToNext: wsGoToNext,
-    goToPrevious: wsGoToPrevious,
+    hasNext: _wsHasNext,
+    hasPrevious: _wsHasPrevious,
+    goToNext: _wsGoToNext,
+    goToPrevious: _wsGoToPrevious,
     isLoading: wsLoading,
   } = useVideoNavigation(id || '');
 
@@ -545,7 +545,7 @@ export function VideoPage() {
 
         {/* Scrollable video feed */}
         <div className="space-y-6 max-w-xl mx-auto">
-          {videos.map((video, index) => (
+          {videos?.map((video, index) => (
             <div
               key={video.id}
               ref={index === currentIndex ? initialVideoRef : undefined}

@@ -1,26 +1,77 @@
-// ABOUTME: Hook for fetching profile statistics including video count, views, followers, and joined date
-// ABOUTME: Aggregates data from video events, social interactions, and contact lists
-// ABOUTME: Queries multiple relays without limits for accurate counts
+// ABOUTME: Hook for fetching profile statistics from Funnelcake REST API with WebSocket fallback
+// ABOUTME: Aggregates data from REST API for speed, falls back to WebSocket when unavailable
 
 import { useQuery } from '@tanstack/react-query';
 import { useNostr } from '@nostrify/react';
 import type { ProfileStats } from '@/components/ProfileHeader';
 import { debugLog } from '@/lib/debug';
 import type { ParsedVideoData } from '@/types/video';
+import { API_CONFIG } from '@/config/api';
+import { fetchUserProfile } from '@/lib/funnelcakeClient';
+import { isFunnelcakeAvailable } from '@/lib/funnelcakeHealth';
 
 /**
  * Fetch comprehensive profile statistics for a user
- * Includes video count, total views, follower/following counts, and joined date
+ * Uses Funnelcake REST API when available for fast response,
+ * falls back to WebSocket queries when Funnelcake is unavailable
  */
 export function useProfileStats(pubkey: string, videos?: ParsedVideoData[]) {
   const { nostr } = useNostr();
+  const apiUrl = API_CONFIG.funnelcake.baseUrl;
 
   return useQuery({
-    queryKey: ['profile-stats', pubkey, videos?.length],
+    queryKey: ['profile-stats-v2', pubkey, videos?.length || 0],
     queryFn: async (context) => {
       if (!pubkey) throw new Error('No pubkey provided');
 
       const signal = AbortSignal.any([context.signal, AbortSignal.timeout(10000)]);
+
+      // Calculate video-based stats from provided videos array
+      // These are always computed locally regardless of API source
+      const videosCount = videos?.length || 0;
+      const originalLoopCount = videos?.reduce((sum, v) => sum + (v.loopCount || 0), 0) || 0;
+      const isClassicViner = originalLoopCount > 0;
+
+      if (isClassicViner) {
+        debugLog(`[useProfileStats] Classic Viner detected with ${originalLoopCount} original loops`);
+      }
+
+      // Try Funnelcake REST API first (much faster than WebSocket)
+      if (isFunnelcakeAvailable(apiUrl)) {
+        try {
+          debugLog(`[useProfileStats] Using Funnelcake REST API for ${pubkey}`);
+          const profile = await fetchUserProfile(apiUrl, pubkey, signal);
+
+          if (profile) {
+            // Calculate total views from videos if available, otherwise use API reactions
+            let totalViews = 0;
+            if (videos && videos.length > 0) {
+              totalViews = videos.reduce((sum, v) => sum + (v.likeCount || 0), 0);
+            } else {
+              totalViews = profile.total_reactions || 0;
+            }
+
+            const stats: ProfileStats = {
+              videosCount,
+              totalViews,
+              joinedDate: null, // REST API doesn't provide this yet
+              followersCount: profile.follower_count || 0,
+              followingCount: profile.following_count || 0,
+              originalLoopCount: isClassicViner ? originalLoopCount : undefined,
+              isClassicViner,
+            };
+
+            debugLog(`[useProfileStats] REST API success: ${stats.followersCount} followers`);
+            return stats;
+          }
+        } catch (err) {
+          debugLog(`[useProfileStats] REST API failed, falling back to WebSocket:`, err);
+          // Fall through to WebSocket fallback
+        }
+      }
+
+      // WebSocket fallback - original implementation
+      debugLog(`[useProfileStats] Using WebSocket fallback for ${pubkey}`);
 
       try {
         // Query contact list for social metrics
@@ -33,18 +84,6 @@ export function useProfileStats(pubkey: string, videos?: ParsedVideoData[]) {
         ], { signal });
 
         const userContactList = allEvents.filter(e => e.kind === 3 && e.pubkey === pubkey);
-
-        // Calculate video count from provided videos
-        const videosCount = videos?.length || 0;
-
-        // Calculate original Vine loop counts (sum of loopCount from all videos)
-        // Only videos with loopCount > 0 are considered classic Vines
-        const originalLoopCount = videos?.reduce((sum, v) => sum + (v.loopCount || 0), 0) || 0;
-        const isClassicViner = originalLoopCount > 0;
-
-        if (isClassicViner) {
-          debugLog(`[useProfileStats] Classic Viner detected with ${originalLoopCount} original loops`);
-        }
 
         // Get video IDs for social metrics calculation
         const videoIds = videos?.map(v => v.id) || [];
@@ -69,13 +108,12 @@ export function useProfileStats(pubkey: string, videos?: ParsedVideoData[]) {
         }
 
         // Query follower count with much higher limit across multiple relays
-        // The reqRouter will automatically send this to profile relays
         debugLog(`[useProfileStats] Querying followers for ${pubkey}`);
 
         const followerEvents = await nostr.query([{
           kinds: [3],
           '#p': [pubkey],
-          limit: 10000, // Increased from 500 to capture more followers
+          limit: 10000, // Large limit to capture more followers
         }], { signal });
 
         // Calculate follower count (unique pubkeys following this user)
@@ -114,11 +152,13 @@ export function useProfileStats(pubkey: string, videos?: ParsedVideoData[]) {
         console.error('Failed to fetch profile stats:', error);
         // Return default stats on error
         return {
-          videosCount: videos?.length || 0,
+          videosCount,
           totalViews: 0,
           joinedDate: null,
           followersCount: 0,
           followingCount: 0,
+          originalLoopCount: isClassicViner ? originalLoopCount : undefined,
+          isClassicViner,
         } as ProfileStats;
       }
     },

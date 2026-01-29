@@ -196,7 +196,7 @@ function extractVideoUrl(event: NostrEvent): string | null {
 /**
  * Extract limited fallback video URLs from event tags
  */
-function extractAllVideoUrls(event: NostrEvent): string[] {
+function _extractAllVideoUrls(event: NostrEvent): string[] {
   const urls: string[] = [];
 
   // 1. All URLs from imeta tags (both MP4 and HLS)

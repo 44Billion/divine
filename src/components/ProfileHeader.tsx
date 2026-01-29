@@ -54,7 +54,10 @@ function formatNumber(num: number): string {
   return num.toString();
 }
 
-function formatJoinedDate(date: Date | null): string {
+function formatJoinedDate(date: Date | null, isClassicViner?: boolean): string {
+  // Classic Viners show their status unless they've reclaimed their account
+  if (isClassicViner && !date) return 'Classic Viner';
+
   if (!date) return 'Recently joined';
 
   const options: Intl.DateTimeFormatOptions = {
@@ -317,24 +320,24 @@ export function ProfileHeader({
           )}
         </div>
 
-        {/* Total Views */}
+        {/* diVine Loops */}
         <div className="text-center">
           {stats ? (
             <>
               <div className="text-xl sm:text-2xl font-bold text-foreground">
                 {formatNumber(stats.totalViews)}
               </div>
-              <div className="text-xs sm:text-sm text-muted-foreground">Total Views</div>
+              <div className="text-xs sm:text-sm text-muted-foreground">diVine Loops</div>
             </>
           ) : (
             <>
               <Skeleton className="h-6 w-12 mx-auto mb-1" data-testid="stat-skeleton-views" />
-              <div className="text-xs sm:text-sm text-muted-foreground">Total Views</div>
+              <div className="text-xs sm:text-sm text-muted-foreground">diVine Loops</div>
             </>
           )}
         </div>
 
-        {/* Joined Date */}
+        {/* Joined Date / Classic Viner Status */}
         <div className="text-center col-span-2 sm:col-span-1">
           {stats ? (
             <>
@@ -344,7 +347,7 @@ export function ProfileHeader({
                   ? stats.joinedDate.toLocaleString()
                   : undefined
               }>
-                {formatJoinedDate(stats.joinedDate)}
+                {formatJoinedDate(stats.joinedDate, stats.isClassicViner)}
               </div>
             </>
           ) : (
