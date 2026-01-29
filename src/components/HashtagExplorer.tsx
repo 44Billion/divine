@@ -1,23 +1,18 @@
-// ABOUTME: Component for exploring and discovering hashtags using static JSON data
-// ABOUTME: Shows popular hashtags from top_1000_hashtags.json with thumbnails and search
+// ABOUTME: Component for exploring and discovering hashtags using Funnelcake REST API
+// ABOUTME: Shows popular hashtags with thumbnails and search filtering
 
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Hash, TrendingUp, Search, BarChart, Play } from 'lucide-react';
-import { debugLog } from '@/lib/debug';
+import { fetchPopularHashtags } from '@/lib/funnelcakeClient';
+import { DEFAULT_FUNNELCAKE_URL } from '@/config/relays';
 import { useHashtagThumbnail } from '@/hooks/useHashtagThumbnail';
-
-interface HashtagData {
-  rank: number;
-  hashtag: string;
-  count: number;
-  percentage: number;
-}
 
 interface HashtagStats {
   tag: string;
@@ -27,43 +22,31 @@ interface HashtagStats {
 }
 
 /**
- * Hook to fetch a sample video for a hashtag to get its thumbnail
- */
-// useHashtagThumbnail moved to hooks
-
-/**
- * Hook to fetch hashtag statistics from JSON file
+ * Hook to fetch hashtag statistics from Funnelcake API
  */
 function useHashtagStats() {
-  const [data, setData] = useState<HashtagStats[] | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<Error | null>(null);
+  return useQuery({
+    queryKey: ['popular-hashtags'],
+    queryFn: async (context) => {
+      const signal = AbortSignal.any([
+        context.signal,
+        AbortSignal.timeout(10000),
+      ]);
 
-  useEffect(() => {
-    fetch('/top_1000_hashtags.json')
-      .then(response => {
-        if (!response.ok) {
-          throw new Error('Failed to load hashtag data');
-        }
-        return response.json();
-      })
-      .then(jsonData => {
-        const stats: HashtagStats[] = jsonData.hashtags.map((item: HashtagData) => ({
-          tag: item.hashtag,
-          count: item.count,
-          rank: item.rank
-        }));
-        setData(stats);
-        setLoading(false);
-      })
-      .catch(err => {
-        debugLog('[HashtagExplorer] Error loading hashtag data:', err);
-        setError(err);
-        setLoading(false);
-      });
-  }, []);
+      const hashtags = await fetchPopularHashtags(DEFAULT_FUNNELCAKE_URL, 100, signal);
 
-  return { data, isLoading: loading, error };
+      // Transform to HashtagStats format with rank
+      const stats: HashtagStats[] = hashtags.map((h, index) => ({
+        tag: h.hashtag,
+        count: h.video_count,
+        rank: index + 1,
+      }));
+
+      return stats;
+    },
+    staleTime: 60000, // 1 minute
+    gcTime: 300000, // 5 minutes
+  });
 }
 
 /**

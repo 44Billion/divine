@@ -26,6 +26,7 @@ export const API_CONFIG = {
       userFeed: '/api/users/{pubkey}/feed',
       userSocial: '/api/users/{pubkey}/social',
       videoStats: '/api/videos/{eventId}/stats',
+      hashtags: '/api/hashtags',
       trendingHashtags: '/api/hashtags/trending',
       viners: '/api/viners',
       health: '/api/health',

@@ -323,7 +323,29 @@ export async function fetchVideoStats(
 }
 
 /**
- * Fetch trending hashtags
+ * Fetch popular hashtags (by total video count)
+ *
+ * @param apiUrl - Base URL of the Funnelcake API
+ * @param limit - Maximum number of hashtags to return (1-100, default 50)
+ * @param signal - Optional abort signal
+ * @returns Promise with popular hashtags
+ */
+export async function fetchPopularHashtags(
+  apiUrl: string = API_CONFIG.funnelcake.baseUrl,
+  limit: number = 50,
+  signal?: AbortSignal
+): Promise<FunnelcakeHashtag[]> {
+  // API returns array directly
+  return funnelcakeRequest<FunnelcakeHashtag[]>(
+    apiUrl,
+    API_CONFIG.funnelcake.endpoints.hashtags,
+    { limit },
+    signal
+  );
+}
+
+/**
+ * Fetch trending hashtags (time-weighted)
  *
  * @param apiUrl - Base URL of the Funnelcake API
  * @param limit - Maximum number of hashtags to return
@@ -367,6 +389,29 @@ export async function fetchClassicViners(
 }
 
 /**
+ * Response from /api/videos/{id} endpoint
+ */
+interface VideoByIdResponse {
+  event: {
+    id: string;
+    pubkey: string;
+    created_at: number;
+    kind: number;
+    tags: string[][];
+    content: string;
+    sig: string;
+  };
+  stats: {
+    reactions: number;
+    comments: number;
+    reposts: number;
+    engagement_score: number;
+    trending_score: number;
+    embedded_loops?: number;
+  };
+}
+
+/**
  * Fetch a single video by event ID or d_tag
  *
  * @param apiUrl - Base URL of the Funnelcake API
@@ -384,14 +429,67 @@ export async function fetchVideoById(
   debugLog(`[FunnelcakeClient] fetchVideoById: ${identifier}, pubkey: ${pubkey || 'none'}`);
 
   try {
-    // If we have pubkey, try fetching user's videos first (faster)
+    // First try the direct /api/videos/{id} endpoint
+    try {
+      const response = await funnelcakeRequest<VideoByIdResponse>(
+        apiUrl,
+        `${API_CONFIG.funnelcake.endpoints.videos}/${identifier}`,
+        {},
+        signal
+      );
+
+      if (response && response.event) {
+        debugLog(`[FunnelcakeClient] Found video via direct lookup`);
+        // Transform the response to FunnelcakeVideoRaw format
+        const event = response.event;
+        const stats = response.stats;
+
+        // Extract data from tags
+        const getTag = (name: string) => event.tags.find(t => t[0] === name)?.[1];
+        const getImeta = () => {
+          const imetaTag = event.tags.find(t => t[0] === 'imeta');
+          if (!imetaTag) return {};
+          const imeta: Record<string, string> = {};
+          for (let i = 1; i < imetaTag.length; i++) {
+            const parts = imetaTag[i].split(' ');
+            if (parts.length >= 2) {
+              imeta[parts[0]] = parts.slice(1).join(' ');
+            }
+          }
+          return imeta;
+        };
+        const imeta = getImeta();
+
+        return {
+          id: event.id,
+          pubkey: event.pubkey,
+          created_at: event.created_at,
+          kind: event.kind,
+          d_tag: getTag('d') || '',
+          title: getTag('title'),
+          content: event.content,
+          thumbnail: imeta.image,
+          video_url: imeta.url || '',
+          author_name: getTag('author'),
+          reactions: stats.reactions,
+          comments: stats.comments,
+          reposts: stats.reposts,
+          engagement_score: stats.engagement_score,
+          trending_score: stats.trending_score,
+          loops: stats.embedded_loops || parseInt(getTag('loops') || '0') || null,
+        };
+      }
+    } catch {
+      debugLog(`[FunnelcakeClient] Direct lookup failed, trying fallbacks`);
+    }
+
+    // If we have pubkey, try fetching user's videos
     if (pubkey) {
       const response = await fetchUserVideos(apiUrl, pubkey, {
-        limit: 50, // Get enough to find the video
+        limit: 50,
         signal,
       });
 
-      // Find by event ID or d_tag
       const video = response.videos.find(
         v => v.id === identifier || v.d_tag === identifier
       );
@@ -400,23 +498,6 @@ export async function fetchVideoById(
         debugLog(`[FunnelcakeClient] Found video via user videos`);
         return video;
       }
-    }
-
-    // Fallback: Search by author if we have pubkey, or just try trending
-    // This is less efficient but works as a fallback
-    const searchResponse = await searchVideos(apiUrl, {
-      author: pubkey,
-      limit: 100,
-      signal,
-    });
-
-    const video = searchResponse.videos.find(
-      v => v.id === identifier || v.d_tag === identifier
-    );
-
-    if (video) {
-      debugLog(`[FunnelcakeClient] Found video via search`);
-      return video;
     }
 
     debugLog(`[FunnelcakeClient] Video not found: ${identifier}`);
