@@ -189,6 +189,11 @@ export function AppFooter() {
               </div>
             </div>
           </div>
+
+          {/* Build Info */}
+          <div className="text-center text-xs text-muted-foreground/50 pt-4 border-t border-primary/5">
+            Build: {__BUILD_DATE__}
+          </div>
         </div>
       </div>
     </footer>

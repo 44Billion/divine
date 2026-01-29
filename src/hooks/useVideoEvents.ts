@@ -106,12 +106,12 @@ async function parseVideoEvents(
 
     validVideos++;
 
-    // NEW: Use vineId as the unique key for deduplication
-    const uniqueKey = vineId;
+    // Use pubkey:kind:d-tag as the unique key for addressable event deduplication
+    const uniqueKey = `${event.pubkey}:${event.kind}:${vineId}`;
 
     // If we already have this video, skip (keep the first one)
     if (videoMap.has(uniqueKey)) {
-      debugLog(`[useVideoEvents] Skipping duplicate video with vineId ${vineId}`);
+      debugLog(`[useVideoEvents] Skipping duplicate video with key ${uniqueKey}`);
       continue;
     }
 
@@ -166,11 +166,12 @@ async function parseVideoEvents(
       continue;
     }
 
-    // The unique key is the vineId (dTag)
+    // Use pubkey:kind:d-tag as unique key for addressable event deduplication
     const vineId = dTag;
+    const uniqueKey = `${pubkey}:${kindNum}:${vineId}`;
 
     // Check if we already have this video in our map
-    let videoData = videoMap.get(vineId);
+    let videoData = videoMap.get(uniqueKey);
 
     if (!videoData) {
       // Need to fetch the original video
@@ -243,12 +244,12 @@ async function parseVideoEvents(
         originalEvent: originalVideo // Store original event for source viewing
       };
 
-      videoMap.set(vineId, videoData);
+      videoMap.set(uniqueKey, videoData);
     }
 
     // Safety check (should never happen due to logic above)
     if (!videoData) {
-      debugError(`[useVideoEvents] videoData unexpectedly undefined for vineId ${vineId}`);
+      debugError(`[useVideoEvents] videoData unexpectedly undefined for key ${uniqueKey}`);
       continue;
     }
 
