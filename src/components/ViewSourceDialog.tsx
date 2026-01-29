@@ -1,7 +1,7 @@
 // ABOUTME: Dialog for viewing raw Nostr event JSON source
 // ABOUTME: Shows formatted event data for debugging and transparency
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -10,9 +10,10 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Code, Copy, Check, AlertCircle } from 'lucide-react';
+import { Code, Copy, Check, AlertCircle, Loader2 } from 'lucide-react';
 import type { NostrEvent } from '@nostrify/nostrify';
 import type { ParsedVideoData } from '@/types/video';
+import { API_CONFIG } from '@/config/api';
 
 interface ViewSourceDialogProps {
   open: boolean;
@@ -24,22 +25,73 @@ interface ViewSourceDialogProps {
 
 // Helper function to reconstruct a basic NostrEvent from ParsedVideoData
 function reconstructEvent(video: ParsedVideoData): Partial<NostrEvent> {
+  const tags: string[][] = [];
+
+  // Add d tag (required for addressable events)
+  if (video.vineId) {
+    tags.push(['d', video.vineId]);
+  }
+
+  // Add title
+  if (video.title) {
+    tags.push(['title', video.title]);
+  }
+
+  // Add video URL
+  if (video.videoUrl) {
+    tags.push(['url', video.videoUrl]);
+  }
+
+  // Add thumbnail
+  if (video.thumbnailUrl) {
+    tags.push(['thumb', video.thumbnailUrl]);
+  }
+
+  // Add duration
+  if (video.duration) {
+    tags.push(['duration', video.duration.toString()]);
+  }
+
+  // Add hashtags
+  for (const tag of video.hashtags) {
+    tags.push(['t', tag]);
+  }
+
+  // Add origin platform if vine
+  if (video.isVineMigrated) {
+    tags.push(['platform', 'vine']);
+  }
+
+  // Add loop count if available (vine stat)
+  if (video.loopCount && video.loopCount > 0) {
+    tags.push(['loops', video.loopCount.toString()]);
+  }
+
   return {
     id: video.id,
     pubkey: video.pubkey,
     created_at: video.createdAt,
     kind: video.kind,
     content: video.content,
-    tags: [
-      // Reconstruct basic tags that we know about
-      ...(video.hashtags.map(tag => ['t', tag])),
-      ...(video.title ? [['title', video.title]] : []),
-      ...(video.videoUrl ? [['url', video.videoUrl]] : []),
-      ...(video.thumbnailUrl ? [['thumb', video.thumbnailUrl]] : []),
-      ...(video.duration ? [['duration', video.duration.toString()]] : []),
-    ],
+    tags,
     // Note: sig field is not available in parsed data
   };
+}
+
+// Fetch full event from Funnelcake API
+async function fetchFullEvent(eventId: string): Promise<NostrEvent | null> {
+  try {
+    const response = await fetch(`${API_CONFIG.funnelcake.baseUrl}/api/event/${eventId}`);
+    if (!response.ok) {
+      console.error('Failed to fetch event:', response.status);
+      return null;
+    }
+    const data = await response.json();
+    return data as NostrEvent;
+  } catch (err) {
+    console.error('Failed to fetch event:', err);
+    return null;
+  }
 }
 
 export function ViewSourceDialog({
@@ -47,13 +99,39 @@ export function ViewSourceDialog({
   onClose,
   event,
   video,
-  title = 'Event Source',
+  title = 'Video Event Source',
 }: ViewSourceDialogProps) {
   const [copied, setCopied] = useState(false);
+  const [fetchedEvent, setFetchedEvent] = useState<NostrEvent | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [fetchError, setFetchError] = useState(false);
 
-  // Use provided event, or originalEvent from video data, or reconstruct from video data
-  const displayEvent = event || video?.originalEvent || (video ? reconstructEvent(video) : null);
-  const isReconstructed = !event && !video?.originalEvent && !!video;
+  // Fetch full event when dialog opens and we don't have original
+  useEffect(() => {
+    if (open && !event && !video?.originalEvent && video?.id) {
+      setLoading(true);
+      setFetchError(false);
+      fetchFullEvent(video.id)
+        .then(result => {
+          setFetchedEvent(result);
+          setFetchError(!result);
+        })
+        .finally(() => setLoading(false));
+    }
+  }, [open, event, video?.originalEvent, video?.id]);
+
+  // Reset state when dialog closes
+  useEffect(() => {
+    if (!open) {
+      setFetchedEvent(null);
+      setFetchError(false);
+    }
+  }, [open]);
+
+  // Use provided event, or fetched event, or originalEvent from video data, or reconstruct
+  const displayEvent = event || fetchedEvent || video?.originalEvent || (video ? reconstructEvent(video) : null);
+  const isReconstructed = !event && !fetchedEvent && !video?.originalEvent && !!video;
+  const hasFullEvent = !!event || !!fetchedEvent || !!video?.originalEvent;
 
   if (!displayEvent) {
     return null;
@@ -84,27 +162,47 @@ export function ViewSourceDialog({
           </DialogDescription>
         </DialogHeader>
 
-        {isReconstructed && (
+        {loading && (
+          <div className="flex items-center justify-center py-8">
+            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            <span className="ml-2 text-sm text-muted-foreground">Loading full event...</span>
+          </div>
+        )}
+
+        {!loading && isReconstructed && (
           <div className="bg-yellow-50 dark:bg-yellow-950/20 border border-yellow-200 dark:border-yellow-900/50 rounded-lg p-3 flex items-start gap-2">
             <AlertCircle className="h-4 w-4 text-yellow-600 dark:text-yellow-400 shrink-0 mt-0.5" />
             <p className="text-sm text-yellow-900 dark:text-yellow-200">
-              <strong>Note:</strong> This is a reconstructed representation from parsed data. The original event signature and some tags may not be included.
+              <strong>Note:</strong> {fetchError
+                ? 'Could not fetch full event from relay. This is a reconstructed representation from cached data.'
+                : 'This is a reconstructed representation from parsed data. The original event signature and some tags may not be included.'}
             </p>
           </div>
         )}
 
-        <div className="flex-1 overflow-auto">
-          <pre className="bg-muted/50 rounded-lg p-4 text-xs overflow-x-auto">
-            <code className="font-mono text-foreground">{eventJson}</code>
-          </pre>
-        </div>
+        {!loading && hasFullEvent && (
+          <div className="bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-900/50 rounded-lg p-3 flex items-start gap-2">
+            <Check className="h-4 w-4 text-green-600 dark:text-green-400 shrink-0 mt-0.5" />
+            <p className="text-sm text-green-900 dark:text-green-200">
+              <strong>Verified:</strong> This is the complete original event with cryptographic signature.
+            </p>
+          </div>
+        )}
+
+        {!loading && (
+          <div className="flex-1 overflow-auto">
+            <pre className="bg-muted/50 rounded-lg p-4 text-xs overflow-x-auto">
+              <code className="font-mono text-foreground">{eventJson}</code>
+            </pre>
+          </div>
+        )}
 
         <div className="flex justify-between items-center pt-4 border-t">
           <div className="text-xs text-muted-foreground">
             Event ID: <code className="bg-muted px-1 py-0.5 rounded">{displayEvent.id}</code>
           </div>
           <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={handleCopy}>
+            <Button variant="outline" size="sm" onClick={handleCopy} disabled={loading}>
               {copied ? (
                 <>
                   <Check className="h-4 w-4 mr-2" />
