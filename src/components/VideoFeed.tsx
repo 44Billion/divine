@@ -23,7 +23,7 @@ import { useFullscreenFeed } from '@/contexts/FullscreenFeedContext';
 type ViewMode = 'feed' | 'grid';
 
 interface VideoFeedProps {
-  feedType?: 'discovery' | 'home' | 'trending' | 'hashtag' | 'profile' | 'recent' | 'classics';
+  feedType?: 'discovery' | 'home' | 'trending' | 'hashtag' | 'profile' | 'recent' | 'classics' | 'foryou';
   hashtag?: string;
   pubkey?: string;
   limit?: number;
