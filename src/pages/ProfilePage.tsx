@@ -61,7 +61,7 @@ export function ProfilePage() {
   const { data: funnelcakeProfile, isLoading: funnelcakeLoading } = useFunnelcakeProfile(pubkey || '', !!pubkey);
 
   // Fetch profile data from Nostr relays (slower, but more authoritative)
-  const { data: authorData } = useAuthor(pubkey || '');
+  const { data: authorData, isLoading: authorLoading } = useAuthor(pubkey || '');
 
   // Fetch videos for profile using Funnelcake (fast, includes cached author data)
   const { data: videosData, isLoading: videosLoading, error: videosError } = useVideoProvider({
@@ -71,13 +71,20 @@ export function ProfilePage() {
   });
   const videos = videosData?.pages?.flatMap(p => p.videos) || [];
 
-  // ALWAYS show data immediately - never block on slow queries
-  // Priority: Funnelcake (fast) first, upgrade with Nostr when it arrives
+  // Data source priority:
+  // 1. Funnelcake (fast REST API) - use if available
+  // 2. Nostr relays (WebSocket) - fallback for users not in Funnelcake
   const nostrMeta = authorData?.metadata;
   const fcMeta = funnelcakeProfile;
 
+  // Check if we have a real name from either source
+  const hasNameFromFunnelcake = !!(fcMeta?.display_name || fcMeta?.name);
+  const hasNameFromNostr = !!(nostrMeta?.display_name || nostrMeta?.name);
+
+  // Still loading name if: no name from either source AND either query is still in progress
+  const stillLoadingName = !hasNameFromFunnelcake && !hasNameFromNostr && (funnelcakeLoading || authorLoading);
+
   // Build metadata object - prefer Funnelcake (fast) then Nostr
-  // ALWAYS return an object so the UI never shows loading state for name
   const metadata = {
     display_name: fcMeta?.display_name || nostrMeta?.display_name,
     name: fcMeta?.name || nostrMeta?.name,
@@ -87,6 +94,8 @@ export function ProfilePage() {
     nip05: fcMeta?.nip05 || nostrMeta?.nip05,
     website: fcMeta?.website || nostrMeta?.website,
     lud16: fcMeta?.lud16 || nostrMeta?.lud16,
+    // Flag to indicate name is still loading (used by ProfileHeader)
+    _stillLoadingName: stillLoadingName,
   };
 
   // Use Funnelcake stats (fast) - don't run expensive Nostr queries

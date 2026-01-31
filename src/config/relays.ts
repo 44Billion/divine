@@ -54,11 +54,6 @@ export const PROFILE_RELAYS: RelayConfig[] = [
     purpose: 'profile',
   },
   {
-    url: 'wss://relay.divine.video',
-    name: 'DVines',
-    purpose: 'profile',
-  },
-  {
     url: 'wss://purplepag.es',
     name: 'Purple Pages',
     purpose: 'profile',

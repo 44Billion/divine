@@ -11,6 +11,7 @@ import { debugError, verboseLog } from '@/lib/debug';
 import { BlurhashPlaceholder, isValidBlurhash } from '@/components/BlurhashImage';
 import { AgeVerificationOverlay } from '@/components/AgeVerificationOverlay';
 import { createAuthLoader } from '@/lib/hlsAuthLoader';
+import { bandwidthTracker } from '@/lib/bandwidthTracker';
 import Hls from 'hls.js';
 
 // Maximum playback duration limit - videos loop back to start after this many seconds
@@ -449,9 +450,30 @@ export const VideoPlayer = forwardRef<HTMLVideoElement, VideoPlayerProps>(
         const isVertical = height > width;
         verboseLog(`[VideoPlayer ${videoId}] Video dimensions: ${width}x${height} (${isVertical ? 'vertical' : 'horizontal'})`);
         verboseLog(`[VideoPlayer ${videoId}] Video duration: ${videoRef.current.duration}s`);
-        
+
         // Report dimensions to parent component
         onVideoDimensions?.({ width, height, isVertical });
+
+        // Record bandwidth sample for adaptive quality selection
+        // Try to get actual transfer size from Performance API first
+        const entries = performance.getEntriesByType('resource') as PerformanceResourceTiming[];
+        const videoEntry = entries.find(e =>
+          (src && e.name.includes(src)) ||
+          (hlsUrl && e.name.includes(hlsUrl))
+        );
+
+        if (videoEntry && videoEntry.transferSize > 0 && loadDuration > 0) {
+          // Use actual transfer size from Performance API
+          verboseLog(`[VideoPlayer ${videoId}] Recording bandwidth: ${videoEntry.transferSize} bytes in ${loadDuration.toFixed(0)}ms`);
+          bandwidthTracker.recordLoad(videoEntry.transferSize, loadDuration);
+        } else if (loadDuration > 0 && videoRef.current.duration > 0) {
+          // Estimate based on video duration and typical bitrate
+          // 720p ~2.5 Mbps = 312.5 KB/s, 480p ~1.5 Mbps = 187.5 KB/s
+          // Use conservative estimate (480p) to avoid overestimating bandwidth
+          const estimatedBytes = Math.round(videoRef.current.duration * 187500);
+          verboseLog(`[VideoPlayer ${videoId}] Recording bandwidth (estimated): ${estimatedBytes} bytes in ${loadDuration.toFixed(0)}ms`);
+          bandwidthTracker.recordLoad(estimatedBytes, loadDuration);
+        }
       }
 
       // Mark as loaded and hide blurhash permanently

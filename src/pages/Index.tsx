@@ -1,12 +1,12 @@
 import { useSeoMeta } from '@unhead/react';
 import { VideoFeed } from '@/components/VideoFeed';
-import { LandingPage } from '@/components/LandingPage';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useFollowList } from '@/hooks/useFollowList';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Users } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import DiscoveryPage from './DiscoveryPage';
 
 const Index = () => {
   const { user } = useCurrentUser();
@@ -18,9 +18,9 @@ const Index = () => {
     description: 'Watch and share 6-second looping videos on the decentralized Nostr network.',
   });
 
-  // Show landing page if not logged in
+  // Show discovery feed for non-logged-in users (no interstitial landing page)
   if (!user) {
-    return <LandingPage />;
+    return <DiscoveryPage />;
   }
 
   // Show message if user has no follows

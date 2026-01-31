@@ -31,6 +31,8 @@ import { formatCount, formatViewCount } from '@/lib/formatUtils';
 import { getSafeProfileImage } from '@/lib/imageUtils';
 import { cn } from '@/lib/utils';
 import { MuteType } from '@/types/moderation';
+import { getOptimalVideoUrl } from '@/lib/bandwidthTracker';
+import { useBandwidthTier } from '@/hooks/useBandwidthTier';
 import type { ParsedVideoData } from '@/types/video';
 
 interface FullscreenVideoItemProps {
@@ -64,6 +66,13 @@ export function FullscreenVideoItem({
   commentCount,
   viewCount = 0,
 }: FullscreenVideoItemProps) {
+  // Subscribe to bandwidth tier changes for adaptive HLS quality
+  const _bandwidthTier = useBandwidthTier();
+
+  // Compute optimal HLS URL based on current bandwidth tier
+  const optimalHlsUrl = getOptimalVideoUrl(video.videoUrl);
+  const effectiveHlsUrl = video.hlsUrl || (optimalHlsUrl !== video.videoUrl ? optimalHlsUrl : undefined);
+
   const [showComments, setShowComments] = useState(false);
   const [videoError, setVideoError] = useState(false);
   const [showHeartAnimation, setShowHeartAnimation] = useState(false);
@@ -199,7 +208,7 @@ export function FullscreenVideoItem({
           <VideoPlayer
             videoId={video.id}
             src={video.videoUrl}
-            hlsUrl={video.hlsUrl}
+            hlsUrl={effectiveHlsUrl}
             fallbackUrls={video.fallbackVideoUrls}
             poster={video.thumbnailUrl}
             blurhash={video.blurhash}

@@ -154,15 +154,31 @@ export async function fetchVideos(
   apiUrl: string = API_CONFIG.funnelcake.baseUrl,
   options: FunnelcakeFetchOptions = {}
 ): Promise<FunnelcakeResponse> {
-  const { sort = 'trending', limit = 20, before, classic, platform, signal } = options;
+  const { sort = 'trending', limit = 20, before, offset, classic, platform, signal } = options;
+
+  // Use offset pagination for sorted feeds (trending, loops, engagement)
+  // Use timestamp (before) for chronological feeds (recent)
+  const useOffset = offset !== undefined || (sort !== 'recent' && before === undefined);
 
   const params: Record<string, string | number | boolean | undefined> = {
     sort,
     limit,
-    before,
     classic,
     platform,
   };
+
+  // Add pagination param
+  if (offset !== undefined) {
+    params.offset = offset;
+  } else if (before !== undefined) {
+    // If before looks like a small number (offset), use it as offset for sorted feeds
+    const beforeNum = parseInt(before, 10);
+    if (sort !== 'recent' && !isNaN(beforeNum) && beforeNum < 1000000000) {
+      params.offset = beforeNum;
+    } else {
+      params.before = before;
+    }
+  }
 
   // API returns array directly, wrap it in expected format
   const videos = await funnelcakeRequest<FunnelcakeVideoRaw[]>(
@@ -172,10 +188,19 @@ export async function fetchVideos(
     signal
   );
 
+  const videoCount = videos.length;
+  const currentOffset = offset ?? (params.offset as number | undefined) ?? 0;
+  const nextOffset = currentOffset + videoCount;
+
+  // For sorted feeds, return offset-based cursor; for chronological, return timestamp
+  const next_cursor = videoCount >= limit
+    ? (sort !== 'recent' ? String(nextOffset) : String(videos[videoCount - 1].created_at))
+    : undefined;
+
   return {
     videos,
-    has_more: videos.length >= limit,
-    next_cursor: videos.length > 0 ? String(videos[videos.length - 1].created_at) : undefined,
+    has_more: videoCount >= limit,
+    next_cursor,
   };
 }
 
@@ -190,7 +215,7 @@ export async function searchVideos(
   apiUrl: string = API_CONFIG.funnelcake.baseUrl,
   options: FunnelcakeSearchOptions = {}
 ): Promise<FunnelcakeResponse> {
-  const { query, tag, author, sort = 'trending', limit = 20, before, classic, platform, signal } = options;
+  const { query, tag, author, sort = 'trending', limit = 20, before, offset, classic, platform, signal } = options;
 
   // Use /api/videos endpoint for hashtag searches (tag parameter)
   // Use /api/search endpoint for text searches (q parameter)
@@ -205,10 +230,22 @@ export async function searchVideos(
     author,
     sort,
     limit,
-    before,
     classic,
     platform,
   };
+
+  // Add pagination param - prefer offset for sorted results
+  if (offset !== undefined) {
+    params.offset = offset;
+  } else if (before !== undefined) {
+    // If before looks like a small number (offset), use it as offset for sorted feeds
+    const beforeNum = parseInt(before, 10);
+    if (sort !== 'recent' && !isNaN(beforeNum) && beforeNum < 1000000000) {
+      params.offset = beforeNum;
+    } else {
+      params.before = before;
+    }
+  }
 
   // API returns array directly, wrap it in expected format
   const videos = await funnelcakeRequest<FunnelcakeVideoRaw[]>(
@@ -218,10 +255,19 @@ export async function searchVideos(
     signal
   );
 
+  const videoCount = videos.length;
+  const currentOffset = offset ?? (params.offset as number | undefined) ?? 0;
+  const nextOffset = currentOffset + videoCount;
+
+  // For sorted feeds, return offset-based cursor; for chronological, return timestamp
+  const next_cursor = videoCount >= limit
+    ? (sort !== 'recent' ? String(nextOffset) : String(videos[videoCount - 1].created_at))
+    : undefined;
+
   return {
     videos,
-    has_more: videos.length >= limit,
-    next_cursor: videos.length > 0 ? String(videos[videos.length - 1].created_at) : undefined,
+    has_more: videoCount >= limit,
+    next_cursor,
   };
 }
 
@@ -238,15 +284,26 @@ export async function fetchUserVideos(
   pubkey: string,
   options: FunnelcakeFetchOptions = {}
 ): Promise<FunnelcakeResponse> {
-  const { sort = 'recent', limit = 20, before, signal } = options;
+  const { sort = 'recent', limit = 20, before, offset, signal } = options;
 
   const endpoint = API_CONFIG.funnelcake.endpoints.userVideos.replace('{pubkey}', pubkey);
 
   const params: Record<string, string | number | boolean | undefined> = {
     sort,
     limit,
-    before,
   };
+
+  // Add pagination param - prefer offset for sorted results
+  if (offset !== undefined) {
+    params.offset = offset;
+  } else if (before !== undefined) {
+    const beforeNum = parseInt(before, 10);
+    if (sort !== 'recent' && !isNaN(beforeNum) && beforeNum < 1000000000) {
+      params.offset = beforeNum;
+    } else {
+      params.before = before;
+    }
+  }
 
   // API returns array directly, wrap it in expected format
   const videos = await funnelcakeRequest<FunnelcakeVideoRaw[]>(
@@ -256,10 +313,18 @@ export async function fetchUserVideos(
     signal
   );
 
+  const videoCount = videos.length;
+  const currentOffset = offset ?? (params.offset as number | undefined) ?? 0;
+  const nextOffset = currentOffset + videoCount;
+
+  const next_cursor = videoCount >= limit
+    ? (sort !== 'recent' ? String(nextOffset) : String(videos[videoCount - 1].created_at))
+    : undefined;
+
   return {
     videos,
-    has_more: videos.length >= limit,
-    next_cursor: videos.length > 0 ? String(videos[videos.length - 1].created_at) : undefined,
+    has_more: videoCount >= limit,
+    next_cursor,
   };
 }
 
@@ -274,15 +339,26 @@ export async function fetchUserFeed(
   apiUrl: string = API_CONFIG.funnelcake.baseUrl,
   options: FunnelcakeUserFeedOptions
 ): Promise<FunnelcakeResponse> {
-  const { pubkey, sort = 'recent', limit = 20, before, signal } = options;
+  const { pubkey, sort = 'recent', limit = 20, before, offset, signal } = options;
 
   const endpoint = API_CONFIG.funnelcake.endpoints.userFeed.replace('{pubkey}', pubkey);
 
   const params: Record<string, string | number | boolean | undefined> = {
     sort,
     limit,
-    before,
   };
+
+  // Add pagination param - prefer offset for sorted results
+  if (offset !== undefined) {
+    params.offset = offset;
+  } else if (before !== undefined) {
+    const beforeNum = parseInt(before, 10);
+    if (sort !== 'recent' && !isNaN(beforeNum) && beforeNum < 1000000000) {
+      params.offset = beforeNum;
+    } else {
+      params.before = before;
+    }
+  }
 
   // API returns array directly, wrap it in expected format
   const videos = await funnelcakeRequest<FunnelcakeVideoRaw[]>(
@@ -292,10 +368,18 @@ export async function fetchUserFeed(
     signal
   );
 
+  const videoCount = videos.length;
+  const currentOffset = offset ?? (params.offset as number | undefined) ?? 0;
+  const nextOffset = currentOffset + videoCount;
+
+  const next_cursor = videoCount >= limit
+    ? (sort !== 'recent' ? String(nextOffset) : String(videos[videoCount - 1].created_at))
+    : undefined;
+
   return {
     videos,
-    has_more: videos.length >= limit,
-    next_cursor: videos.length > 0 ? String(videos[videos.length - 1].created_at) : undefined,
+    has_more: videoCount >= limit,
+    next_cursor,
   };
 }
 
@@ -313,6 +397,7 @@ interface FunnelcakeRecommendationsResponse {
 export interface FunnelcakeRecommendationsOptions {
   pubkey: string;
   limit?: number;
+  offset?: number;           // Offset for pagination (0-indexed)
   category?: string;
   fallback?: 'popular' | 'recent';
   signal?: AbortSignal;
@@ -329,17 +414,18 @@ export async function fetchRecommendations(
   apiUrl: string = API_CONFIG.funnelcake.baseUrl,
   options: FunnelcakeRecommendationsOptions
 ): Promise<FunnelcakeResponse & { source?: string }> {
-  const { pubkey, limit = 20, category, fallback, signal } = options;
+  const { pubkey, limit = 20, offset, category, fallback, signal } = options;
 
   const endpoint = API_CONFIG.funnelcake.endpoints.userRecommendations.replace('{pubkey}', pubkey);
 
   const params: Record<string, string | number | boolean | undefined> = {
     limit,
+    offset,
     category,
     fallback,
   };
 
-  debugLog(`[FunnelcakeClient] Fetching recommendations for ${pubkey}`, { limit, category, fallback });
+  debugLog(`[FunnelcakeClient] Fetching recommendations for ${pubkey}`, { limit, offset, category, fallback });
 
   const response = await funnelcakeRequest<FunnelcakeRecommendationsResponse>(
     apiUrl,
@@ -348,12 +434,16 @@ export async function fetchRecommendations(
     signal
   );
 
-  debugLog(`[FunnelcakeClient] Got ${response.videos?.length || 0} recommendations (source: ${response.source})`);
+  const videoCount = response.videos?.length || 0;
+  const nextOffset = (offset || 0) + videoCount;
+
+  debugLog(`[FunnelcakeClient] Got ${videoCount} recommendations (source: ${response.source})`);
 
   return {
     videos: response.videos || [],
-    has_more: (response.videos?.length || 0) >= limit,
-    next_cursor: undefined, // Recommendations don't support cursor-based pagination
+    has_more: videoCount >= limit,
+    // Use offset-based pagination for recommendations
+    next_cursor: videoCount >= limit ? String(nextOffset) : undefined,
     source: response.source,
   };
 }

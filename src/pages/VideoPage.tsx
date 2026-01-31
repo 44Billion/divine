@@ -9,7 +9,7 @@ import { VideoCard } from '@/components/VideoCard';
 import { useVideoNavigation, type VideoNavigationContext } from '@/hooks/useVideoNavigation';
 import { useVideoByIdFunnelcake } from '@/hooks/useVideoByIdFunnelcake';
 import { useAuthor } from '@/hooks/useAuthor';
-import { useVideoSocialMetrics, useVideoUserInteractions } from '@/hooks/useVideoSocialMetrics';
+import { useBatchedVideoInteractions } from '@/hooks/useBatchedVideoInteractions';
 import { useNostrPublish } from '@/hooks/useNostrPublish';
 import { useRepostVideo } from '@/hooks/usePublishVideo';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
@@ -18,7 +18,7 @@ import { useToast } from '@/hooks/useToast';
 import { genUserName } from '@/lib/genUserName';
 import { nip19 } from 'nostr-tools';
 import { debugLog } from '@/lib/debug';
-import type { ParsedVideoData } from '@/types/video';
+import type { ParsedVideoData, UserInteractions } from '@/types/video';
 
 export function VideoPage() {
   const { id } = useParams<{ id: string }>();
@@ -62,15 +62,11 @@ export function VideoPage() {
     isLoading: wsLoading,
   } = useVideoNavigation(id || '');
 
-  // For profile context, prefer WebSocket data which has loop counts from Nostr events
-  // Funnelcake's /api/users/{pubkey}/videos endpoint doesn't return loop counts
-  const isProfileContext = context?.source === 'profile';
-  const currentVideo = isProfileContext
-    ? (wsVideo || funnelcakeVideo)
-    : (funnelcakeVideo || wsVideo);
-  const videos = isProfileContext
-    ? (wsVideos || funnelcakeVideos)
-    : (funnelcakeVideos || wsVideos);
+  // ALWAYS prefer Funnelcake REST API first - it's much faster
+  // Loop counts are parsed from content field by funnelcakeTransform
+  // WebSocket is only used as fallback when Funnelcake fails
+  const currentVideo = funnelcakeVideo || wsVideo;
+  const videos = funnelcakeVideos || wsVideos;
   const isLoading = funnelcakeLoading && wsLoading;
 
   // Calculate navigation state from available videos
@@ -113,9 +109,24 @@ export function VideoPage() {
   const authorData = useAuthor(context?.pubkey || '');
   const authorName = context?.pubkey ? (authorData.data?.metadata?.name || genUserName(context.pubkey)) : null;
 
+  // Batch fetch user interactions for all videos at once (instead of N individual queries)
+  const videosForInteractions = useMemo(() => {
+    return (videos || []).map(v => ({
+      id: v.id,
+      pubkey: v.pubkey,
+      vineId: v.vineId,
+    }));
+  }, [videos]);
+
   // Social interaction hooks
   const [showCommentsForVideo, setShowCommentsForVideo] = useState<string | null>(null);
   const { user } = useCurrentUser();
+
+  // Batch fetch all user interactions in ONE query instead of per-video
+  const { interactions: batchedInteractions } = useBatchedVideoInteractions(
+    videosForInteractions,
+    user?.pubkey
+  );
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { mutateAsync: publishEvent } = useNostrPublish();
@@ -346,10 +357,8 @@ export function VideoPage() {
   };
 
   // Helper component to provide social metrics data for the video
-  function VideoCardWithMetrics({ video }: { video: ParsedVideoData }) {
-    const { data: socialMetrics } = useVideoSocialMetrics(video.id, video.pubkey, video.vineId);
-    const { data: userInteractions } = useVideoUserInteractions(video.id, video.pubkey, video.vineId, user?.pubkey);
-
+  // Uses pre-fetched batched interactions instead of individual queries per video
+  function VideoCardWithMetrics({ video, userInteractions }: { video: ParsedVideoData; userInteractions?: UserInteractions }) {
     const handleVideoLike = async () => {
       if (userInteractions?.hasLiked) {
         // Unlike - delete the like event
@@ -385,10 +394,10 @@ export function VideoPage() {
         onCloseComments={handleCloseComments}
         isLiked={userInteractions?.hasLiked || false}
         isReposted={userInteractions?.hasReposted || false}
-        likeCount={(video.likeCount ?? 0) + (socialMetrics?.likeCount ?? 0)}
-        repostCount={(video.repostCount ?? 0) + (socialMetrics?.repostCount ?? 0)}
-        commentCount={(video.commentCount ?? 0) + (socialMetrics?.commentCount ?? 0)}
-        viewCount={(socialMetrics?.viewCount ?? 0) + (video.loopCount ?? 0)}
+        likeCount={video.likeCount ?? 0}
+        repostCount={video.repostCount ?? 0}
+        commentCount={video.commentCount ?? 0}
+        viewCount={video.loopCount ?? 0}
         showComments={showCommentsForVideo === video.id}
         navigationContext={context || undefined}
       />
@@ -398,6 +407,17 @@ export function VideoPage() {
   // Ref for scrolling to the initial video
   const initialVideoRef = useRef<HTMLDivElement>(null);
   const hasScrolledRef = useRef(false);
+
+  // Track when the primary video has loaded - delay rendering others until then
+  const [primaryVideoLoaded, setPrimaryVideoLoaded] = useState(false);
+
+  // Reset primary loaded state when video changes
+  useEffect(() => {
+    setPrimaryVideoLoaded(false);
+    // Mark as loaded after a short delay to allow video to start loading
+    const timer = setTimeout(() => setPrimaryVideoLoaded(true), 500);
+    return () => clearTimeout(timer);
+  }, [id]);
 
   // Scroll to the initial video when feed mode loads
   useEffect(() => {
@@ -543,17 +563,40 @@ export function VideoPage() {
           </div>
         </div>
 
-        {/* Scrollable video feed */}
+        {/* Scrollable video feed - prioritize current video first */}
         <div className="space-y-6 max-w-xl mx-auto">
-          {videos?.map((video, index) => (
-            <div
-              key={video.id}
-              ref={index === currentIndex ? initialVideoRef : undefined}
-              className="scroll-mt-20"
-            >
-              <VideoCardWithMetrics video={video} />
-            </div>
-          ))}
+          {videos?.map((video, index) => {
+            const isCurrentVideo = index === currentIndex;
+            // Only render current video immediately, others wait until primary is loaded
+            const shouldRender = isCurrentVideo || primaryVideoLoaded;
+
+            return (
+              <div
+                key={video.id}
+                ref={isCurrentVideo ? initialVideoRef : undefined}
+                className="scroll-mt-20"
+              >
+                {shouldRender ? (
+                  <VideoCardWithMetrics
+                    video={video}
+                    userInteractions={batchedInteractions.get(video.id)}
+                  />
+                ) : (
+                  // Placeholder skeleton while waiting for primary video to load
+                  <Card className="overflow-hidden">
+                    <div className="flex items-center gap-3 p-4">
+                      <Skeleton className="h-10 w-10 rounded-full" />
+                      <div className="space-y-2">
+                        <Skeleton className="h-4 w-24" />
+                        <Skeleton className="h-3 w-16" />
+                      </div>
+                    </div>
+                    <Skeleton className="aspect-square w-full" />
+                  </Card>
+                )}
+              </div>
+            );
+          })}
         </div>
       </div>
     );
@@ -646,7 +689,10 @@ export function VideoPage() {
 
         {/* Video Card */}
         {currentVideo && (
-          <VideoCardWithMetrics video={currentVideo} />
+          <VideoCardWithMetrics
+            video={currentVideo}
+            userInteractions={batchedInteractions.get(currentVideo.id)}
+          />
         )}
       </div>
 

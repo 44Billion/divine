@@ -39,6 +39,7 @@ import { TermsPage } from "./pages/TermsPage";
 import AppCallbackPage from "./pages/AppCallbackPage";
 import { AppLayout } from "@/components/AppLayout";
 import { DebugVideoPage } from "./pages/DebugVideoPage";
+import LeaderboardPage from "./pages/LeaderboardPage";
 // import { UploadPage } from "./pages/UploadPage"; // DISABLED: Upload route is commented out
 import { KeycastAutoConnect } from "@/components/KeycastAutoConnect";
 
@@ -85,6 +86,7 @@ export function AppRouter() {
           <Route path="/profile/:npub" element={<ProfilePage />} />
           <Route path="/video/:id" element={<VideoPage />} />
           <Route path="/search" element={<SearchPage />} />
+          <Route path="/leaderboard" element={<LeaderboardPage />} />
           <Route path="/u/:userId" element={<UniversalUserPage />} />
           <Route path="/:nip19" element={<NIP19Page />} />
 

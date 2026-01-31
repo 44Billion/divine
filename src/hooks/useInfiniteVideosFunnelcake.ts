@@ -178,18 +178,22 @@ export function useInfiniteVideosFunnelcake({
             });
             break;
 
-          case 'recommendations':
+          case 'recommendations': {
             if (!user?.pubkey) {
               debugLog('[useInfiniteVideosFunnelcake] No user logged in for recommendations feed');
               return { videos: [], nextCursor: undefined };
             }
+            // Recommendations use offset pagination
+            const recOffset = isOffsetParam ? (pageParam as { offset: number }).offset : 0;
             response = await fetchRecommendations(effectiveApiUrl, {
               pubkey: user.pubkey,
               limit: pageSize,
+              offset: recOffset,
               fallback: 'popular', // Fall back to popular videos if no personalized recs
               signal,
             });
             break;
+          }
 
           default:
             // trending, recent, classics
@@ -203,8 +207,10 @@ export function useInfiniteVideosFunnelcake({
       const queryTime = performance.now() - queryStart;
 
       // Transform response to video page
+      // Recommendations use offset-based pagination, others use timestamp
       const parseStart = performance.now();
-      const page = transformToVideoPage(response);
+      const cursorType = feedType === 'recommendations' ? 'offset' : 'timestamp';
+      const page = transformToVideoPage(response, cursorType);
       const parseTime = performance.now() - parseStart;
 
       const totalTime = performance.now() - totalStart;

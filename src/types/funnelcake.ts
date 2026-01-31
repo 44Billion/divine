@@ -101,9 +101,10 @@ export interface FunnelcakeError {
  * Options for fetching videos from Funnelcake
  */
 export interface FunnelcakeFetchOptions {
-  sort?: 'trending' | 'recent' | 'loops' | 'engagement';
+  sort?: 'trending' | 'recent' | 'popular' | 'loops';
   limit?: number;
-  before?: string;        // Cursor for pagination (timestamp or offset)
+  before?: string;        // Cursor for pagination (timestamp)
+  offset?: number;        // Offset for page-based pagination (0-indexed)
   classic?: boolean;      // Filter for classic/archived vines
   platform?: string;      // Filter by origin platform ('vine', 'tiktok', etc.)
   signal?: AbortSignal;
@@ -133,4 +134,64 @@ export interface FunnelcakeHealthStatus {
   lastChecked: number;    // Unix timestamp of last health check
   errorCount: number;     // Consecutive error count
   lastError?: string;     // Last error message
+}
+
+/**
+ * Full user profile response from /api/users/{pubkey}
+ */
+export interface FunnelcakeUserResponse {
+  pubkey: string;
+  profile: {
+    name?: string;
+    display_name?: string;
+    picture?: string;
+    banner?: string;
+    about?: string;
+    nip05?: string;
+    lud16?: string;
+    website?: string;
+  } | null;
+  social: {
+    follower_count: number;
+    following_count: number;
+  };
+  stats: {
+    video_count: number;
+    total_reactions: number;
+    total_comments: number;
+    total_reposts: number;
+  };
+  engagement?: {
+    avg_reactions_per_video: number;
+    avg_comments_per_video: number;
+    engagement_rate: number;
+  };
+}
+
+/**
+ * Flattened profile for easy use in components
+ */
+export interface FunnelcakeProfile {
+  pubkey: string;
+  name?: string;
+  display_name?: string;
+  picture?: string;
+  banner?: string;
+  about?: string;
+  nip05?: string;
+  lud16?: string;
+  website?: string;
+  video_count?: number;
+  follower_count?: number;
+  following_count?: number;
+  total_reactions?: number;
+  total_loops?: number;
+}
+
+/**
+ * Recommendations response from /api/users/{pubkey}/recommendations
+ */
+export interface FunnelcakeRecommendationsResponse {
+  videos: FunnelcakeVideoRaw[];
+  source: 'personalized' | 'popular' | 'recent';
 }

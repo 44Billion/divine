@@ -37,6 +37,8 @@ import { getSafeProfileImage } from '@/lib/imageUtils';
 import type { VideoNavigationContext } from '@/hooks/useVideoNavigation';
 import { useToast } from '@/hooks/useToast';
 import { MuteType } from '@/types/moderation';
+import { getOptimalVideoUrl, bandwidthTracker } from '@/lib/bandwidthTracker';
+import { useBandwidthTier } from '@/hooks/useBandwidthTier';
 
 interface VideoCardProps {
   video: ParsedVideoData;
@@ -85,6 +87,15 @@ export function VideoCard({
   videoIndex: _videoIndex,
 }: VideoCardProps) {
   const authorData = useAuthor(video.pubkey);
+  // Subscribe to bandwidth tier changes - triggers re-render when tier changes
+  // The tier itself is used internally by getOptimalVideoUrl
+  const _bandwidthTier = useBandwidthTier();
+
+  // Compute optimal HLS URL based on current bandwidth tier
+  // This dynamically selects 480p/720p/adaptive based on observed load performance
+  const optimalHlsUrl = getOptimalVideoUrl(video.videoUrl);
+  // Use the video's hlsUrl if provided (e.g., already HLS), otherwise use computed optimal URL
+  const effectiveHlsUrl = video.hlsUrl || (optimalHlsUrl !== video.videoUrl ? optimalHlsUrl : undefined);
   const { data: lists } = useVideosInLists(video.vineId ?? undefined);
 
   // NEW: Get reposter data from reposts array
@@ -402,8 +413,16 @@ export function VideoCard({
           {/* Video player or thumbnail */}
           <CardContent className={cn("p-0", isHorizontal && "p-2")}>
             <div
-              className="relative rounded-lg overflow-hidden w-full max-h-[70vh]"
-              style={{ aspectRatio: videoAspectRatio.toString() }}
+              className={cn(
+                "relative rounded-lg overflow-hidden w-full max-h-[70vh]",
+                // Center square videos when height-constrained
+                videoAspectRatio >= 0.9 && videoAspectRatio <= 1.1 && "mx-auto"
+              )}
+              style={{
+                aspectRatio: videoAspectRatio.toString(),
+                // For square videos, also limit width to match height constraint
+                maxWidth: videoAspectRatio >= 0.9 && videoAspectRatio <= 1.1 ? '70vh' : undefined,
+              }}
             >
               {!isPlaying ? (
                 <ThumbnailPlayer
@@ -420,7 +439,7 @@ export function VideoCard({
                 <VideoPlayer
                   videoId={video.id}
                   src={video.videoUrl}
-                  hlsUrl={video.hlsUrl}
+                  hlsUrl={effectiveHlsUrl}
                   fallbackUrls={video.fallbackVideoUrls}
                   poster={video.thumbnailUrl}
                   blurhash={video.blurhash}

@@ -32,9 +32,13 @@ export interface ProfileStats {
   isClassicViner?: boolean;    // Whether this user has classic Vine content
 }
 
+interface ProfileMetadata extends NostrMetadata {
+  _stillLoadingName?: boolean;  // Flag to indicate name is still being fetched
+}
+
 interface ProfileHeaderProps {
   pubkey: string;
-  metadata?: NostrMetadata;
+  metadata?: ProfileMetadata;
   stats?: ProfileStats;
   isOwnProfile: boolean;
   isFollowing: boolean;
@@ -92,6 +96,9 @@ export function ProfileHeader({
   const npub = nip19.npubEncode(pubkey);
   const shortNpub = `${npub.slice(0, 8)}...${npub.slice(-4)}`;
 
+  // Check if we're still waiting for name to load
+  const stillLoadingName = metadata?._stillLoadingName ?? false;
+
   // Don't show generated placeholder names - show real data or truncated npub
   // Only use display_name/name if they exist in metadata (not generated)
   const hasRealName = metadata?.display_name || metadata?.name;
@@ -144,9 +151,13 @@ export function ProfileHeader({
           <div className="space-y-2">
             <div>
               <div className="flex items-center gap-2 justify-center sm:justify-start">
-                <h1 className="text-2xl sm:text-3xl font-bold truncate">
-                  {displayName}
-                </h1>
+                {stillLoadingName ? (
+                  <Skeleton className="h-8 w-32 sm:h-9 sm:w-40" data-testid="name-loading-skeleton" />
+                ) : (
+                  <h1 className="text-2xl sm:text-3xl font-bold truncate">
+                    {displayName}
+                  </h1>
+                )}
                 <Button
                   variant="ghost"
                   size="icon"
