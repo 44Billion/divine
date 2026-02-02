@@ -33,18 +33,22 @@ async function handleRequest(event) {
 
   const request = event.request;
   const url = new URL(request.url);
-  
-  console.log('Request hostname:', url.hostname, 'path:', url.pathname);
+
+  // Check for original host passed by divine-router
+  const originalHost = request.headers.get('X-Original-Host');
+  const hostnameToUse = originalHost || url.hostname;
+
+  console.log('Request hostname:', url.hostname, 'original:', originalHost, 'path:', url.pathname);
 
   // 1. Redirect www.* to apex domain (e.g., www.divine.video -> divine.video)
-  if (url.hostname.startsWith('www.')) {
+  if (hostnameToUse.startsWith('www.')) {
     const newUrl = new URL(url);
-    newUrl.hostname = url.hostname.slice(4); // remove 'www.'
+    newUrl.hostname = hostnameToUse.slice(4); // remove 'www.'
     return Response.redirect(newUrl.toString(), 301);
   }
 
   // 2. Check if this is a subdomain request (e.g., alice.dvine.video)
-  const subdomain = getSubdomain(url.hostname);
+  const subdomain = getSubdomain(hostnameToUse);
   
   if (subdomain) {
     // Subdomain NIP-05 request
@@ -61,7 +65,7 @@ async function handleRequest(event) {
     // Subdomain profile - serve SPA with injected user data
     console.log('Handling subdomain profile for:', subdomain);
     try {
-      return await handleSubdomainProfile(subdomain, url, request);
+      return await handleSubdomainProfile(subdomain, url, request, hostnameToUse);
     } catch (err) {
       console.error('Subdomain profile error:', err.message, err.stack);
       return new Response('Profile not found', { status: 404 });
@@ -230,10 +234,13 @@ async function handleSubdomainNip05(subdomain) {
  * Handle subdomain profile requests (e.g., alice.dvine.video/)
  * Serves the SPA directly with injected user data instead of redirecting.
  */
-async function handleSubdomainProfile(subdomain, url, request) {
+async function handleSubdomainProfile(subdomain, url, request, originalHostname) {
   // Check if this is a static asset request - let publisherServer handle it
   const assetExtensions = ['.js', '.css', '.png', '.jpg', '.jpeg', '.gif', '.svg', '.ico', '.webp', '.avif', '.woff', '.woff2', '.ttf', '.otf', '.json', '.webmanifest', '.map'];
   const isAsset = assetExtensions.some(ext => url.pathname.endsWith(ext)) || url.pathname.startsWith('/assets/');
+
+  // Use original hostname if provided (from divine-router), otherwise use url.hostname
+  const hostnameToUse = originalHostname || url.hostname;
 
   if (isAsset) {
     // Serve static assets normally via publisherServer
@@ -279,10 +286,10 @@ async function handleSubdomainProfile(subdomain, url, request) {
     console.error('Failed to fetch profile from Funnelcake:', e.message);
   }
 
-  // Find the apex domain from the current hostname
+  // Find the apex domain from the current hostname (use hostnameToUse for subdomain requests)
   let apexDomain = 'dvine.video';
   for (const apex of APEX_DOMAINS) {
-    if (url.hostname.endsWith(apex)) {
+    if (hostnameToUse.endsWith(apex)) {
       apexDomain = apex;
       break;
     }
