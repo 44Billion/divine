@@ -288,18 +288,24 @@ async function handleSubdomainProfile(subdomain, url, request) {
     }
   }
 
-  // Read the index.html from KV store
-  const contentStore = new KVStore('divine-web-content');
-  const htmlEntry = await contentStore.get('live/index.html');
+  // Get HTML from PublisherServer by creating an internal request
+  // We need to fetch "/" from the apex domain to get the SPA HTML
+  const internalUrl = new URL('/', `https://${apexDomain}`);
+  const internalRequest = new Request(internalUrl.toString(), {
+    method: 'GET',
+    headers: request.headers,
+  });
 
-  if (!htmlEntry) {
-    console.error('Failed to read index.html from KV store');
-    // Fallback to redirect if KV read fails
+  const htmlResponse = await publisherServer.serveRequest(internalRequest);
+
+  if (!htmlResponse || htmlResponse.status !== 200) {
+    console.error('Failed to get index.html from PublisherServer');
+    // Fallback to redirect if serving fails
     const profileUrl = `https://${apexDomain}/profile/${npub}`;
     return Response.redirect(profileUrl, 302);
   }
 
-  let html = await htmlEntry.text();
+  let html = await htmlResponse.text();
 
   // Build the user data object to inject
   const divineUser = {
