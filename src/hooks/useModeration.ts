@@ -17,6 +17,9 @@ import {
 } from '@/types/moderation';
 import { submitReportToZendesk, buildContentUrl } from '@/lib/reportApi';
 
+// Stable empty array to prevent infinite re-renders when user is not logged in
+const EMPTY_MUTE_LIST: MuteItem[] = [];
+
 /**
  * Parse a mute list event (kind 10001)
  */
@@ -322,7 +325,7 @@ export function useReportHistory() {
  * Hook to check if content should be filtered
  */
 export function useContentModeration() {
-  const { data: muteList = [] } = useMuteList();
+  const { data: muteList = EMPTY_MUTE_LIST } = useMuteList();
 
   // Debug: Log mute list when it changes
   console.log('[useContentModeration] Mute list loaded:', muteList.length, 'items', muteList);
