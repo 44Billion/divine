@@ -1,8 +1,9 @@
-// ABOUTME: Firebase Analytics integration for tracking events and errors
+// ABOUTME: Firebase Analytics and Performance Monitoring integration
 // ABOUTME: Provides functions for logging analytics events, errors, and performance metrics
 
 import { initializeApp, type FirebaseApp } from 'firebase/app';
 import { getAnalytics, logEvent, setUserId, type Analytics } from 'firebase/analytics';
+import { getPerformance, trace, type FirebasePerformance } from 'firebase/performance';
 
 const firebaseConfig = {
   apiKey: "AIzaSyDEdSqDEExCcHMXr6MEvNmY_GJ5ACTtLvA",
@@ -16,9 +17,10 @@ const firebaseConfig = {
 
 let app: FirebaseApp | null = null;
 let analytics: Analytics | null = null;
+let firebasePerf: FirebasePerformance | null = null;
 
 /**
- * Initialize Firebase Analytics
+ * Initialize Firebase Analytics and Performance Monitoring
  */
 export function initializeAnalytics() {
   try {
@@ -27,13 +29,15 @@ export function initializeAnalytics() {
 
     app = initializeApp(firebaseConfig);
     analytics = getAnalytics(app);
+    firebasePerf = getPerformance(app);
 
     console.log('[Analytics] Firebase Analytics initialized');
+    console.log('[Performance] Firebase Performance Monitoring initialized');
 
     // Set up global error handlers
     setupErrorHandlers();
   } catch (error) {
-    console.error('[Analytics] Failed to initialize Firebase Analytics:', error);
+    console.error('[Analytics] Failed to initialize Firebase:', error);
   }
 }
 
@@ -171,7 +175,7 @@ export function trackFirstVideoPlayback() {
   if (firstVideoPlaybackTracked) return;
   firstVideoPlaybackTracked = true;
 
-  const timeToFirstVideo = Math.round(performance.now());
+  const timeToFirstVideo = Math.round(window.performance.now());
 
   trackEvent('first_video_playback', {
     time_to_playback_ms: timeToFirstVideo,
@@ -179,4 +183,75 @@ export function trackFirstVideoPlayback() {
   });
 
   console.log(`[Analytics] First video playback: ${timeToFirstVideo}ms from page load`);
+}
+
+// ============================================================================
+// Firebase Performance Monitoring - Custom Traces
+// ============================================================================
+
+/**
+ * Start a custom performance trace
+ * @returns A trace object with stop() method, or null if performance not initialized
+ */
+export function startTrace(traceName: string) {
+  if (!firebasePerf) return null;
+
+  try {
+    const customTrace = trace(firebasePerf, traceName);
+    customTrace.start();
+    return customTrace;
+  } catch (error) {
+    console.error('[Performance] Failed to start trace:', error);
+    return null;
+  }
+}
+
+/**
+ * Measure an async operation's performance
+ * @example
+ * const result = await measureAsync('fetch_video_feed', async () => {
+ *   return await fetchVideos();
+ * });
+ */
+export async function measureAsync<T>(
+  traceName: string,
+  operation: () => Promise<T>,
+  attributes?: Record<string, string>
+): Promise<T> {
+  const customTrace = startTrace(traceName);
+
+  if (attributes && customTrace) {
+    Object.entries(attributes).forEach(([key, value]) => {
+      customTrace.putAttribute(key, value);
+    });
+  }
+
+  try {
+    const result = await operation();
+    if (customTrace) {
+      customTrace.putAttribute('status', 'success');
+      customTrace.stop();
+    }
+    return result;
+  } catch (error) {
+    if (customTrace) {
+      customTrace.putAttribute('status', 'error');
+      customTrace.putAttribute('error_type', error instanceof Error ? error.name : 'unknown');
+      customTrace.stop();
+    }
+    throw error;
+  }
+}
+
+/**
+ * Track a metric within a trace
+ */
+export function incrementMetric(customTrace: ReturnType<typeof trace> | null, metricName: string, value = 1) {
+  if (!customTrace) return;
+
+  try {
+    customTrace.incrementMetric(metricName, value);
+  } catch (error) {
+    console.error('[Performance] Failed to increment metric:', error);
+  }
 }

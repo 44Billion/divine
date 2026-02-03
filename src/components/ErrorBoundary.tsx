@@ -1,5 +1,6 @@
 import { Component, ErrorInfo, ReactNode } from 'react';
 import { trackError } from '@/lib/analytics';
+import { captureException } from '@/lib/sentry';
 
 interface ErrorBoundaryState {
   hasError: boolean;
@@ -34,7 +35,13 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     console.error('Error caught by ErrorBoundary:', error, errorInfo);
 
-    // Track error in Firebase Analytics
+    // Report to Sentry (primary crash reporting)
+    captureException(error, {
+      source: 'ErrorBoundary',
+      componentStack: errorInfo.componentStack,
+    });
+
+    // Also track in Firebase Analytics for correlation
     trackError(error, {
       source: 'ErrorBoundary',
       componentStack: errorInfo.componentStack,

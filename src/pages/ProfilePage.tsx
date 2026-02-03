@@ -116,6 +116,8 @@ export function ProfilePage() {
     followersCount: funnelcakeProfile?.follower_count ?? 0,
     followingCount: funnelcakeProfile?.following_count ?? 0,
     totalViews: funnelcakeProfile?.total_reactions ?? 0,
+    totalLoops: funnelcakeProfile?.total_loops ?? 0,
+    totalReactions: funnelcakeProfile?.total_reactions ?? 0,
     joinedDate: null, // Could fetch from Nostr later if needed
     isClassicViner,
     originalLoopCount: funnelcakeProfile?.total_loops ?? originalLoopCount,
