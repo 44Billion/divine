@@ -684,6 +684,11 @@ export function parseVideoEvents(events: NostrEvent[]): ParsedVideoData[] {
     const videoUrl = videoEvent.videoMetadata?.url;
     if (!videoUrl) continue;
 
+    // Filter out videos that are 7 seconds or longer (keep short-form only)
+    // Duration is in seconds from imeta tag
+    const duration = videoEvent.videoMetadata?.duration;
+    if (duration !== undefined && duration >= 7) continue;
+
     parsedVideos.push({
       id: event.id,
       pubkey: event.pubkey,
