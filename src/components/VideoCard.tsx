@@ -417,13 +417,13 @@ export function VideoCard({
             <div
               className={cn(
                 "relative rounded-lg overflow-hidden w-full max-h-[70vh]",
-                // Center square videos when height-constrained
-                videoAspectRatio >= 0.9 && videoAspectRatio <= 1.1 && "mx-auto"
+                // Center non-landscape videos when height-constrained
+                videoAspectRatio <= 1.1 && "mx-auto"
               )}
               style={{
                 aspectRatio: videoAspectRatio.toString(),
-                // For square videos, also limit width to match height constraint
-                maxWidth: videoAspectRatio >= 0.9 && videoAspectRatio <= 1.1 ? '70vh' : undefined,
+                // For non-landscape videos, limit width so max-h-[70vh] doesn't stretch them wide
+                maxWidth: videoAspectRatio <= 1.1 ? `calc(70vh * ${videoAspectRatio})` : undefined,
               }}
             >
               {!isPlaying ? (
