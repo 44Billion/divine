@@ -46,7 +46,7 @@ export function getSubdomainAwareUrl(
     return { href: path, isExternal: false };
   }
 
-  // Root path stays local (AppRouter redirects to subdomain user's profile)
+  // Root path stays local (renders subdomain user's profile directly)
   if (path === '/') {
     return { href: path, isExternal: false };
   }

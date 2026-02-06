@@ -123,7 +123,7 @@ export function Comment({ root, comment, depth = 0, maxDepth = 3, limit, parentC
 
   return (
     <div className={`space-y-3 ${depth > 0 ? 'ml-6 border-l-2 border-muted pl-4' : ''}`}>
-      <Card className={`transition-all ${isOptimistic ? 'bg-orange-50/80 opacity-60' : 'bg-card/50'}`}>
+      <Card className={`transition-all ${isOptimistic ? 'bg-orange-500/10 dark:bg-orange-500/20 opacity-70' : 'bg-muted/50 dark:bg-muted'}`}>
         <CardContent className="p-4">
           <div className="space-y-3">
             {/* Comment Header */}
@@ -175,7 +175,7 @@ export function Comment({ root, comment, depth = 0, maxDepth = 3, limit, parentC
             )}
 
             {/* Comment Content */}
-            <div className="text-sm">
+            <div className="text-sm text-foreground">
               <NoteContent event={comment} className="text-sm" />
             </div>
 

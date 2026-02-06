@@ -3,6 +3,7 @@
 
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
+import { getDivineNip05Info } from '@/lib/nip05Utils';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
@@ -186,19 +187,37 @@ export function ProfileHeader({
                   )}
 
                   {/* NIP-05 text with styling based on state */}
-                  <Link
-                    to={`/u/${encodeURIComponent(nip05)}`}
-                    className={`text-sm font-medium hover:underline ${
+                  {(() => {
+                    const divineInfo = getDivineNip05Info(nip05);
+                    const className = `text-sm font-medium hover:underline ${
                       nip05State === 'valid'
                         ? 'text-primary'
                         : nip05State === 'invalid'
                           ? 'text-muted-foreground line-through'
                           : 'text-muted-foreground'
-                    }`}
-                  >
-                    {/* Format NIP-05 for display: _@domain → @domain, user@domain → @user@domain */}
-                    {nip05.startsWith('_@') ? `@${nip05.slice(2)}` : `@${nip05}`}
-                  </Link>
+                    }`;
+                    const displayText = divineInfo
+                      ? divineInfo.displayName
+                      : nip05.startsWith('_@') ? `@${nip05.slice(2)}` : `@${nip05}`;
+
+                    return divineInfo ? (
+                      <a
+                        href={divineInfo.href}
+                        className={className}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        {displayText}
+                      </a>
+                    ) : (
+                      <Link
+                        to={`/u/${encodeURIComponent(nip05)}`}
+                        className={className}
+                      >
+                        {displayText}
+                      </Link>
+                    );
+                  })()}
                 </div>
               ) : userName && userName !== displayName ? (
                 <p className="text-muted-foreground text-sm">@{userName}</p>

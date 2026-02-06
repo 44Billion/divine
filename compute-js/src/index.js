@@ -103,7 +103,21 @@ async function handleRequest(event) {
     console.log('Falling through to SPA handler');
   }
 
-  // 6. Serve static content with SPA fallback (handled by PublisherServer config)
+  // 6. Serve sw.js with no-cache to ensure browsers always get the latest service worker
+  if (url.pathname === '/sw.js') {
+    const response = await publisherServer.serveRequest(request);
+    if (response != null) {
+      const headers = new Headers(response.headers);
+      headers.set('Cache-Control', 'no-cache');
+      headers.set('Vary', 'X-Original-Host');
+      return new Response(response.body, {
+        status: response.status,
+        headers,
+      });
+    }
+  }
+
+  // 7. Serve static content with SPA fallback (handled by PublisherServer config)
   const response = await publisherServer.serveRequest(request);
   if (response != null) {
     // Add Vary: X-Original-Host so CDN doesn't mix subdomain and apex cached responses
@@ -301,49 +315,41 @@ async function handleSubdomainProfile(subdomain, url, request, originalHostname)
     }
   }
 
-  // Get HTML from PublisherServer by creating a completely clean request
-  // Use a simple URL without any special headers that might cause issues
-  const cleanUrl = `https://divine.video/index.html`;
-  const internalRequest = new Request(cleanUrl, {
-    method: 'GET',
-  });
-
-  console.log('Fetching HTML from PublisherServer for:', cleanUrl);
-  let htmlResponse;
-  try {
-    htmlResponse = await publisherServer.serveRequest(internalRequest);
-    console.log('PublisherServer response:', htmlResponse?.status, 'body:', htmlResponse?.body ? 'present' : 'absent');
-  } catch (err) {
-    console.error('PublisherServer error:', err.message);
-    const profileUrl = `https://${apexDomain}/profile/${npub}`;
-    return Response.redirect(profileUrl, 302);
-  }
-
-  if (!htmlResponse || htmlResponse.status !== 200) {
-    console.error('Failed to get index.html from PublisherServer, status:', htmlResponse?.status);
-    // Fallback to redirect if serving fails
-    const profileUrl = `https://${apexDomain}/profile/${npub}`;
-    return Response.redirect(profileUrl, 302);
-  }
-
-  // Read the HTML body
+  // Read index.html directly from KV store
+  // (PublisherServer.serveRequest returns empty body for synthetic requests)
   let html;
   try {
-    html = await htmlResponse.text();
-    console.log('HTML length:', html?.length);
+    const contentStore = new KVStore('divine-web-content');
+
+    // Read the file index: publishId_index_collectionName
+    const indexEntry = await contentStore.get('default_index_live');
+    if (!indexEntry) {
+      throw new Error('Content index not found in KV');
+    }
+    const kvIndex = JSON.parse(await indexEntry.text());
+
+    // Find index.html in the index and get its content hash
+    const htmlAsset = kvIndex['/index.html'];
+    if (!htmlAsset) {
+      throw new Error('index.html not in content index');
+    }
+    // Asset format: { key: "sha256:<hash>", size, contentType, variants }
+    // KV content key format: default_files_sha256_<hash>
+    const assetKey = htmlAsset.key; // e.g. "sha256:abc123..."
+    const sha256 = assetKey.replace('sha256:', '');
+    const contentKey = `default_files_sha256_${sha256}`;
+    console.log('Reading index.html from KV, sha256:', sha256.slice(0, 16) + '...');
+    const contentEntry = await contentStore.get(contentKey);
+    if (!contentEntry) {
+      throw new Error(`Content not found: ${contentKey}`);
+    }
+    html = await contentEntry.text();
+    console.log('Got index.html from KV, length:', html.length);
   } catch (err) {
-    console.error('Error reading HTML body:', err.message);
+    console.error('KV read error:', err.message);
     const profileUrl = `https://${apexDomain}/profile/${npub}`;
     return Response.redirect(profileUrl, 302);
   }
-
-  if (!html || html.length === 0) {
-    console.error('Empty HTML from PublisherServer');
-    const profileUrl = `https://${apexDomain}/profile/${npub}`;
-    return Response.redirect(profileUrl, 302);
-  }
-
-  console.log('Got HTML from PublisherServer, length:', html.length);
 
   // Build the user data object to inject
   const divineUser = {

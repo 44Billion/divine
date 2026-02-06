@@ -13,6 +13,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { useTheme } from '@/hooks/useTheme';
+import { getSubdomainUser } from '@/hooks/useSubdomainUser';
 
 export interface AppHeaderProps {
   className?: string;
@@ -23,6 +24,7 @@ export function AppHeader({ className }: AppHeaderProps) {
   const location = useLocation();
   const { displayTheme, setTheme } = useTheme();
   const { user } = useCurrentUser();
+  const subdomainUser = getSubdomainUser();
 
   const isActive = (path: string) => location.pathname === path;
 
@@ -35,7 +37,13 @@ export function AppHeader({ className }: AppHeaderProps) {
       <div className="container flex h-16 items-center justify-between">
         <div className="flex items-center gap-4">
           <button
-            onClick={() => navigate('/')}
+            onClick={() => {
+              if (subdomainUser) {
+                window.location.href = `https://${subdomainUser.apexDomain}/`;
+              } else {
+                navigate('/');
+              }
+            }}
             aria-label="Go to home"
           >
             <img
