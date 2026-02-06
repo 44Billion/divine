@@ -65,11 +65,17 @@ jobs:
         working-directory: compute-js
         run: npm ci
 
-      - name: Deploy to Fastly Compute
+      - name: Deploy to Fastly Compute (edge worker)
         working-directory: compute-js
         env:
           FASTLY_API_TOKEN: ${{ secrets.FASTLY_API_TOKEN }}
         run: fastly compute publish --non-interactive --token=$FASTLY_API_TOKEN
+
+      - name: Publish static content to KV Store
+        working-directory: compute-js
+        env:
+          FASTLY_API_TOKEN: ${{ secrets.FASTLY_API_TOKEN }}
+        run: npx @fastly/compute-js-static-publish publish-content
 
   deploy-cloudflare:
     needs: build

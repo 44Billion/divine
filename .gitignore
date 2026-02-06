@@ -28,6 +28,7 @@ dist-ssr
 .env
 .env.*
 !.env.example
+.mcp.json
 
 # Wrangler
 .wrangler
@@ -44,4 +45,3 @@ compute-js/bin/
 compute-js/node_modules/
 compute-js/pkg/
 compute-js/__input_bundled.js.map
-compute-js/publish-content.config.js
