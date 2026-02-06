@@ -3,6 +3,7 @@
 
 /** @type {import('@fastly/compute-js-static-publish').PublishContentConfig} */
 const config = {
+  kvStoreName: "divine-web-content",
   rootDir: "../dist",
   excludeDirs: [
     './node_modules',
@@ -19,31 +20,31 @@ const config = {
     if (assetKey.startsWith('/assets/')) {
       return true;
     }
-    
+
     // Exclude PDFs
     if (assetKey.endsWith('.pdf')) {
       console.log(`Excluding PDF from KV: ${assetKey}`);
       return false;
     }
-    
+
     // Exclude large image formats in specific directories
     if (assetKey.includes('/brand-assets/') && assetKey.endsWith('.png')) {
       console.log(`Excluding large brand PNG from KV: ${assetKey}`);
       return false;
     }
-    
+
     // Exclude rabble headshot (large)
     if (assetKey.includes('rabble-headshot')) {
       console.log(`Excluding headshot from KV: ${assetKey}`);
       return false;
     }
-    
+
     // Exclude top_1000_hashtags.json (117KB - too large for KV)
     if (assetKey.includes('top_1000_hashtags.json')) {
       console.log(`Excluding large JSON from KV: ${assetKey}`);
       return false;
     }
-    
+
     // iPad screenshots now included (70-130KB each is fine for KV)
 
     return true;
