@@ -85,6 +85,16 @@ export function initializeSentry() {
       'newestWorker is null',
       'Cannot update a null/nonexistent service worker registration',
       'invalid origin',
+      // Generic SW registration rejections (old browsers, restricted contexts)
+      /Failed to (?:register|update) a ServiceWorker/,
+      'Script https://divine.video/sw.js load failed',
+      'Service Worker script execution timed out',
+      // IDB internal errors (browser-level, not actionable)
+      'An internal error was encountered in the Indexed Database server',
+      'Attempt to delete range from database without an in-progress transaction',
+      "The transaction is inactive or finished",
+      // Cross-origin frame access (browser extension iframes)
+      "Blocked a frame with origin",
       // Sentry SDK internal error on iOS DuckDuckGo/older browsers
       'feature named `performanceMetrics` was not found',
     ],
