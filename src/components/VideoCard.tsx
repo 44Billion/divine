@@ -117,6 +117,7 @@ export function VideoCard({
   const [showViewSourceDialog, setShowViewSourceDialog] = useState(false);
   const [showReactionsModal, setShowReactionsModal] = useState<'likes' | 'reposts' | null>(null);
   // Calculate initial aspect ratio from video dimensions, or use sensible defaults
+  const hasDeclaredDimensions = !!video.dimensions;
   const getInitialAspectRatio = (): number => {
     // Try to parse dimensions from video data (format: "WIDTHxHEIGHT", e.g., "1080x1920")
     if (video.dimensions) {
@@ -133,17 +134,20 @@ export function VideoCard({
 
   // Guard against HLS transcoder reporting wrong orientation.
   // HLS streams may lose rotation metadata and report landscape dimensions
-  // for portrait videos. Only accept dimension updates that don't flip orientation.
+  // for portrait videos. Only block orientation flip when we had DECLARED dimensions
+  // (from dim tag). If we're guessing (no dim tag), always trust the actual video.
   const handleVideoDimensions = useCallback((d: { width: number; height: number }) => {
     const newRatio = d.width / d.height;
-    const isInitialPortrait = initialAspectRatio < 0.9;
-    const isNewLandscape = newRatio > 1.1;
-    // Don't let HLS flip a portrait video to landscape
-    if (isInitialPortrait && isNewLandscape) {
-      return;
+    if (hasDeclaredDimensions) {
+      const isInitialPortrait = initialAspectRatio < 0.9;
+      const isNewLandscape = newRatio > 1.1;
+      // Don't let HLS flip a video with declared portrait dimensions to landscape
+      if (isInitialPortrait && isNewLandscape) {
+        return;
+      }
     }
     setVideoAspectRatio(newRatio);
-  }, [initialAspectRatio]);
+  }, [initialAspectRatio, hasDeclaredDimensions]);
   const _isMobile = useIsMobile();
   // Determine layout: use prop if provided, otherwise always vertical (text below video)
   const effectiveLayout = layout ?? 'vertical';
