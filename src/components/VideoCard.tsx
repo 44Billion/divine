@@ -1,7 +1,7 @@
 // ABOUTME: Video card component for displaying individual videos in feeds
 // ABOUTME: Shows video player, metadata, author info, and social interactions
 
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { Heart, Repeat2, MessageCircle, Share, Eye, MoreVertical, Flag, UserX, Trash2, Volume2, VolumeX, Code, Users, ListPlus, Download, Maximize2 } from 'lucide-react';
 import { nip19 } from 'nostr-tools';
 import { Card, CardContent } from '@/components/ui/card';
@@ -128,7 +128,22 @@ export function VideoCard({
     // Fallback: Vine videos (have loopCount) were square, others are likely 9:16 vertical
     return video.loopCount ? 1 : 9 / 16;
   };
-  const [videoAspectRatio, setVideoAspectRatio] = useState<number>(getInitialAspectRatio);
+  const initialAspectRatio = getInitialAspectRatio();
+  const [videoAspectRatio, setVideoAspectRatio] = useState<number>(initialAspectRatio);
+
+  // Guard against HLS transcoder reporting wrong orientation.
+  // HLS streams may lose rotation metadata and report landscape dimensions
+  // for portrait videos. Only accept dimension updates that don't flip orientation.
+  const handleVideoDimensions = useCallback((d: { width: number; height: number }) => {
+    const newRatio = d.width / d.height;
+    const isInitialPortrait = initialAspectRatio < 0.9;
+    const isNewLandscape = newRatio > 1.1;
+    // Don't let HLS flip a portrait video to landscape
+    if (isInitialPortrait && isNewLandscape) {
+      return;
+    }
+    setVideoAspectRatio(newRatio);
+  }, [initialAspectRatio]);
   const _isMobile = useIsMobile();
   // Determine layout: use prop if provided, otherwise always vertical (text below video)
   const effectiveLayout = layout ?? 'vertical';
@@ -435,7 +450,7 @@ export function VideoCard({
                   className="w-full h-full"
                   onClick={handleThumbnailClick}
                   onError={() => setVideoError(true)}
-                  onVideoDimensions={(d) => setVideoAspectRatio(d.width / d.height)}
+                  onVideoDimensions={handleVideoDimensions}
                 />
               ) : !videoError ? (
                 <VideoPlayer
@@ -450,7 +465,7 @@ export function VideoCard({
                   onError={() => setVideoError(true)}
                   onEnded={handleVideoEnd}
                   onLoadedData={onLoadedData}
-                  onVideoDimensions={(d) => setVideoAspectRatio(d.width / d.height)}
+                  onVideoDimensions={handleVideoDimensions}
                 />
               ) : (
                 <div className="flex items-center justify-center h-full text-muted-foreground">
