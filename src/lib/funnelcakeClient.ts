@@ -280,26 +280,19 @@ export async function fetchUserVideos(
   pubkey: string,
   options: FunnelcakeFetchOptions = {}
 ): Promise<FunnelcakeResponse> {
-  const { sort = 'recent', limit = 20, before, offset, signal } = options;
+  const { limit = 20, before, offset, signal } = options;
 
   const endpoint = API_CONFIG.funnelcake.endpoints.userVideos.replace('{pubkey}', pubkey);
 
-  const params: Record<string, string | number | boolean | undefined> = {
-    sort,
-    limit,
-  };
+  // This endpoint only supports limit + offset pagination (not before/cursor)
+  const currentOffset = offset
+    ?? (before !== undefined ? parseInt(before, 10) : undefined)
+    ?? 0;
 
-  // Add pagination param - prefer offset for sorted results
-  if (offset !== undefined) {
-    params.offset = offset;
-  } else if (before !== undefined) {
-    const beforeNum = parseInt(before, 10);
-    if (sort !== 'recent' && !isNaN(beforeNum) && beforeNum < 1000000000) {
-      params.offset = beforeNum;
-    } else {
-      params.before = before;
-    }
-  }
+  const params: Record<string, string | number | boolean | undefined> = {
+    limit,
+    offset: currentOffset || undefined, // omit if 0
+  };
 
   // API returns array directly, wrap it in expected format
   const videos = await funnelcakeRequest<FunnelcakeVideoRaw[]>(
@@ -310,17 +303,12 @@ export async function fetchUserVideos(
   );
 
   const videoCount = videos.length;
-  const currentOffset = offset ?? (params.offset as number | undefined) ?? 0;
   const nextOffset = currentOffset + videoCount;
-
-  const next_cursor = videoCount >= limit
-    ? (sort !== 'recent' ? String(nextOffset) : String(videos[videoCount - 1].created_at))
-    : undefined;
 
   return {
     videos,
     has_more: videoCount >= limit,
-    next_cursor,
+    next_cursor: videoCount >= limit ? String(nextOffset) : undefined,
   };
 }
 
