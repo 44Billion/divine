@@ -11,6 +11,7 @@ import { InferSeoMetaPlugin } from '@unhead/addons';
 import { Suspense } from 'react';
 import NostrProvider from '@/components/NostrProvider';
 import { EventCachePreloader } from '@/components/EventCachePreloader';
+import { AutoLogin } from '@/components/AutoLogin';
 import { SentryUserSync } from '@/components/SentryUserSync';
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
@@ -57,6 +58,7 @@ export function App() {
         <QueryClientProvider client={queryClient}>
           <NostrLoginProvider storageKey='nostr:login'>
             <NostrProvider>
+              <AutoLogin />
               <EventCachePreloader />
               <SentryUserSync />
               <NWCProvider>
