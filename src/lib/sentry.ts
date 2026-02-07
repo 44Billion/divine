@@ -95,6 +95,8 @@ export function initializeSentry() {
       "The transaction is inactive or finished",
       // Cross-origin frame access (browser extension iframes)
       "Blocked a frame with origin",
+      // Android WebView Java bridge errors
+      'Java bridge method invocation error',
       // Sentry SDK internal error on iOS DuckDuckGo/older browsers
       'feature named `performanceMetrics` was not found',
     ],
