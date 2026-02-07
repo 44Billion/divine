@@ -119,9 +119,11 @@ export function injectWindowNostr(signer: NostrSigner): void {
 
   const globalWindow = window as WindowWithNostr;
 
-  // Check if window.nostr already exists
+  // Don't overwrite an existing window.nostr (e.g. injected by a native app wrapper
+  // that provides peekPublicKey for auto-login).
   if (globalWindow.nostr) {
-    console.warn('[injectWindowNostr] window.nostr already exists, overwriting...');
+    console.log('[injectWindowNostr] window.nostr already exists, skipping injection');
+    return;
   }
 
   // Inject the signer

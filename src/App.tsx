@@ -11,6 +11,7 @@ import { InferSeoMetaPlugin } from '@unhead/addons';
 import { Suspense } from 'react';
 import NostrProvider from '@/components/NostrProvider';
 import { EventCachePreloader } from '@/components/EventCachePreloader';
+import { AutoLogin } from '@/components/AutoLogin';
 import { SentryUserSync } from '@/components/SentryUserSync';
 import { DivineJWTWindowNostr } from '@/components/DivineJWTWindowNostr';
 import { Toaster } from "@/components/ui/toaster";
@@ -59,6 +60,7 @@ export function App() {
           <NostrLoginProvider storageKey='nostr:login'>
             <NostrProvider>
               <DivineJWTWindowNostr />
+              <AutoLogin />
               <EventCachePreloader />
               <SentryUserSync />
               <NWCProvider>
