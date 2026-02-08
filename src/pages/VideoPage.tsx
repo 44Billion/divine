@@ -2,7 +2,8 @@ import { useParams, useSearchParams } from 'react-router-dom';
 import { useSubdomainNavigate } from '@/hooks/useSubdomainNavigate';
 import { useEffect, useCallback, useState, useMemo, useRef } from 'react';
 import { useSeoMeta } from '@unhead/react';
-import { Hash, User, X } from 'lucide-react';
+import { Hash, User, X, Loader2 } from 'lucide-react';
+import InfiniteScroll from 'react-infinite-scroll-component';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
@@ -113,14 +114,37 @@ export function VideoPage() {
     ? (currentVideo?.authorName || authorData.data?.metadata?.name || genUserName(context.pubkey))
     : null;
 
-  // Batch fetch user interactions for all videos at once (instead of N individual queries)
+  // Progressive rendering: only render a window of videos, expand on scroll
+  const INITIAL_RENDER_COUNT = 10;
+  const LOAD_MORE_COUNT = 10;
+  const [maxRendered, setMaxRendered] = useState(INITIAL_RENDER_COUNT);
+
+  // Ensure we always render at least up to the current video + buffer
+  useEffect(() => {
+    if (currentIndex >= 0) {
+      setMaxRendered(prev => Math.max(prev, currentIndex + 5));
+    }
+  }, [currentIndex]);
+
+  const visibleVideos = useMemo(() => {
+    if (!videos) return [];
+    return videos.slice(0, maxRendered);
+  }, [videos, maxRendered]);
+
+  const hasMoreToShow = maxRendered < (videos?.length || 0);
+
+  const showMoreVideos = useCallback(() => {
+    setMaxRendered(prev => Math.min(prev + LOAD_MORE_COUNT, videos?.length || 0));
+  }, [videos?.length]);
+
+  // Batch fetch user interactions only for VISIBLE videos (not all)
   const videosForInteractions = useMemo(() => {
-    return (videos || []).map(v => ({
+    return visibleVideos.map(v => ({
       id: v.id,
       pubkey: v.pubkey,
       vineId: v.vineId,
     }));
-  }, [videos]);
+  }, [visibleVideos]);
 
   // Social interaction hooks
   const [showCommentsForVideo, setShowCommentsForVideo] = useState<string | null>(null);
@@ -566,9 +590,22 @@ export function VideoPage() {
           </div>
         </div>
 
-        {/* Scrollable video feed - prioritize current video first */}
-        <div className="space-y-6 max-w-xl mx-auto">
-          {videos?.map((video, index) => {
+        {/* Scrollable video feed - progressive rendering */}
+        <InfiniteScroll
+          dataLength={visibleVideos.length}
+          next={showMoreVideos}
+          hasMore={hasMoreToShow}
+          loader={
+            <div className="h-16 flex items-center justify-center">
+              <div className="flex items-center gap-3">
+                <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                <span className="text-sm text-muted-foreground">Loading more videos...</span>
+              </div>
+            </div>
+          }
+          className="space-y-6 max-w-xl mx-auto"
+        >
+          {visibleVideos.map((video, index) => {
             const isCurrentVideo = index === currentIndex;
             // Only render current video immediately, others wait until primary is loaded
             const shouldRender = isCurrentVideo || primaryVideoLoaded;
@@ -600,7 +637,7 @@ export function VideoPage() {
               </div>
             );
           })}
-        </div>
+        </InfiniteScroll>
       </div>
     );
   }

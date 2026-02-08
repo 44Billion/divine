@@ -45,7 +45,7 @@ export function useVideoByIdFunnelcake(options: UseVideoByIdOptions): UseVideoBy
 
       debugLog(`[useVideoByIdFunnelcake] Fetching user videos for ${pubkey}`);
       const response = await fetchUserVideos(funnelcakeUrl, pubkey, {
-        limit: 100,  // Get all videos for navigation
+        limit: 50,  // Fetch a reasonable batch for navigation
         signal,
       });
 
@@ -65,7 +65,7 @@ export function useVideoByIdFunnelcake(options: UseVideoByIdOptions): UseVideoBy
       debugLog(`[useVideoByIdFunnelcake] Fetching hashtag videos for #${hashtag}`);
       const response = await searchVideos(funnelcakeUrl, {
         tag: hashtag,
-        limit: 100,  // Get enough videos for navigation
+        limit: 50,  // Fetch a reasonable batch for navigation
         signal,
       });
 
