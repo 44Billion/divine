@@ -1,10 +1,11 @@
-// ABOUTME: Manages Keycast JWT session storage and expiration handling
-// ABOUTME: Handles "remember me" functionality with 1-week session persistence
+// ABOUTME: Manages the hosted Divine JWT session storage and expiration handling
+// ABOUTME: Preserves legacy storage keys so existing sessions survive the rename
 
 import { useCallback, useEffect, useState } from 'react';
 import { useLocalStorage } from '@/hooks/useLocalStorage';
 import { getJWTExpiration } from '@/lib/jwtDecode';
 
+// Legacy key names stay in place so existing hosted-login sessions survive this rename.
 const TOKEN_KEY = 'keycast_jwt_token';
 const EXPIRATION_KEY = 'keycast_jwt_expiration';
 const SESSION_START_KEY = 'keycast_session_start';
@@ -16,23 +17,23 @@ const JWT_LIFETIME_MS = 24 * 60 * 60 * 1000; // 24 hours
 const REMEMBER_ME_DURATION_MS = 7 * 24 * 60 * 60 * 1000; // 1 week
 const EXPIRATION_WARNING_MS = 60 * 60 * 1000; // 1 hour before expiration
 
-export interface KeycastSession {
+export interface DivineSession {
   token: string;
-  email: string;
+  email?: string;
   expiresAt: number;
   sessionStart: number;
   rememberMe: boolean;
   bunkerUrl?: string;
 }
 
-export interface KeycastSessionState {
-  session: KeycastSession | null;
+export interface DivineSessionState {
+  session: DivineSession | null;
   isExpired: boolean;
   isExpiringSoon: boolean;
   needsReauth: boolean;
 }
 
-export function useKeycastSession() {
+export function useDivineSession() {
   const [token, setToken] = useLocalStorage<string | null>(TOKEN_KEY, null);
   const [expiration, setExpiration] = useLocalStorage<number | null>(
     EXPIRATION_KEY,
@@ -49,7 +50,7 @@ export function useKeycastSession() {
   const [email, setEmail] = useLocalStorage<string | null>(EMAIL_KEY, null);
   const [bunkerUrl, setBunkerUrl] = useLocalStorage<string | null>(BUNKER_URL_KEY, null);
 
-  const [state, setState] = useState<KeycastSessionState>({
+  const [state, setState] = useState<DivineSessionState>({
     session: null,
     isExpired: false,
     isExpiringSoon: false,
@@ -58,7 +59,7 @@ export function useKeycastSession() {
 
   // Update state when storage values change
   useEffect(() => {
-    if (!token || !expiration || !sessionStart || !email) {
+    if (!token || !expiration || !sessionStart) {
       setState({
         session: null,
         isExpired: false,
@@ -83,7 +84,7 @@ export function useKeycastSession() {
     setState({
       session: {
         token,
-        email,
+        email: email || undefined,
         expiresAt: expiration,
         sessionStart,
         rememberMe,
@@ -99,11 +100,11 @@ export function useKeycastSession() {
    * Save a new session after login or registration
    */
   const saveSession = useCallback(
-    (
-      newToken: string,
-      userEmail: string,
-      shouldRememberMe: boolean = false
-    ) => {
+      (
+        newToken: string,
+        userEmail: string | null = null,
+        shouldRememberMe: boolean = false
+      ) => {
       const now = Date.now();
 
       // Try to get the real expiration from the JWT token
@@ -111,11 +112,11 @@ export function useKeycastSession() {
 
       // Fallback to 24 hours if JWT doesn't have exp claim
       if (!expiresAt) {
-        console.warn('[useKeycastSession] JWT token missing exp claim, using 24h default');
+        console.warn('[useDivineSession] JWT token missing exp claim, using 24h default');
         expiresAt = now + JWT_LIFETIME_MS;
       } else {
-        console.log('[useKeycastSession] JWT expires at:', new Date(expiresAt).toISOString());
-        console.log('[useKeycastSession] Time until expiration:', Math.round((expiresAt - now) / 1000 / 60), 'minutes');
+        console.log('[useDivineSession] JWT expires at:', new Date(expiresAt).toISOString());
+        console.log('[useDivineSession] Time until expiration:', Math.round((expiresAt - now) / 1000 / 60), 'minutes');
       }
 
       setToken(newToken);
@@ -140,10 +141,10 @@ export function useKeycastSession() {
 
       // Fallback to 24 hours if JWT doesn't have exp claim
       if (!expiresAt) {
-        console.warn('[useKeycastSession] JWT token missing exp claim, using 24h default');
+        console.warn('[useDivineSession] JWT token missing exp claim, using 24h default');
         expiresAt = now + JWT_LIFETIME_MS;
       } else {
-        console.log('[useKeycastSession] Refreshed JWT expires at:', new Date(expiresAt).toISOString());
+        console.log('[useDivineSession] Refreshed JWT expires at:', new Date(expiresAt).toISOString());
       }
 
       setToken(newToken);
@@ -158,7 +159,7 @@ export function useKeycastSession() {
    */
   const saveBunkerUrl = useCallback(
     (url: string) => {
-      console.log('[useKeycastSession] Saving bunker URL for persistent reconnection');
+      console.log('[useDivineSession] Saving bunker URL for persistent reconnection');
       setBunkerUrl(url);
     },
     [setBunkerUrl]
