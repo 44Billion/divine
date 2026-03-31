@@ -6,11 +6,12 @@ const mockFetch = vi.fn();
 global.fetch = mockFetch as unknown as typeof fetch;
 
 describe('DivineJWTSigner', () => {
-  const mockToken = 'mock-jwt-token';
+  let mockToken: string;
   const mockPubkey = 'a'.repeat(64);
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockToken = `mock-jwt-token-${Math.random().toString(36).slice(2)}`;
   });
 
   afterEach(() => {
@@ -55,6 +56,23 @@ describe('DivineJWTSigner', () => {
     expect(mockFetch).toHaveBeenCalledTimes(1);
   });
 
+  it('coalesces concurrent public key lookups across signers that share a session token', async () => {
+    mockFetch.mockImplementation(async () => ({
+      json: async () => ({ result: mockPubkey }),
+    }));
+
+    const firstSigner = new DivineJWTSigner({ token: mockToken });
+    const secondSigner = new DivineJWTSigner({ token: mockToken });
+
+    await expect(Promise.all([
+      firstSigner.getPublicKey(),
+      secondSigner.getPublicKey(),
+      firstSigner.getPublicKey(),
+    ])).resolves.toEqual([mockPubkey, mockPubkey, mockPubkey]);
+
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+  });
+
   it('signs events via the nostr RPC contract', async () => {
     const unsignedEvent = {
       kind: 1,
@@ -69,14 +87,34 @@ describe('DivineJWTSigner', () => {
       sig: 'signature-123',
     };
 
-    mockFetch.mockResolvedValueOnce({
-      json: async () => ({ result: signedEvent }),
-    });
+    mockFetch
+      .mockResolvedValueOnce({
+        json: async () => ({ result: mockPubkey }),
+      })
+      .mockResolvedValueOnce({
+        json: async () => ({ result: signedEvent }),
+      });
 
     const signer = new DivineJWTSigner({ token: mockToken });
 
     await expect(signer.signEvent(unsignedEvent)).resolves.toEqual(signedEvent);
-    expect(mockFetch).toHaveBeenCalledWith(
+    expect(mockFetch).toHaveBeenNthCalledWith(
+      1,
+      'https://login.divine.video/api/nostr',
+      expect.objectContaining({
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${mockToken}`,
+        },
+        body: JSON.stringify({
+          method: 'get_public_key',
+          params: [],
+        }),
+      })
+    );
+    expect(mockFetch).toHaveBeenNthCalledWith(
+      2,
       'https://login.divine.video/api/nostr',
       expect.objectContaining({
         method: 'POST',
@@ -86,7 +124,7 @@ describe('DivineJWTSigner', () => {
         },
         body: JSON.stringify({
           method: 'sign_event',
-          params: [unsignedEvent],
+          params: [{ ...unsignedEvent, pubkey: mockPubkey }],
         }),
       })
     );
