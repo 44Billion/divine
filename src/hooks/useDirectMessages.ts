@@ -7,6 +7,12 @@ import { toast } from '@/hooks/useToast';
 import { useAppContext } from '@/hooks/useAppContext';
 import { useProtectedMinorStatus } from '@/hooks/useProtectedMinorStatus';
 import {
+  assertSupportOnlyDmRecipients,
+  DmSupportOnlyError,
+  filterSupportOnlyDmConversations,
+  isSupportOnlyDmPeerSet,
+} from '@/lib/dmAccessPolicy';
+import {
   assertMinorDmRecipientsAllowed,
   DmSendBlockedError,
   DmSendUnverifiedError,
@@ -18,19 +24,17 @@ import {
 } from '@/lib/dmInboundFilter';
 import { officialAccountsService } from '@/lib/officialAccounts';
 import {
-  buildDmShareTags,
   createRecipientGiftWraps,
   createSelfGiftWrap,
+  decodeConversationId,
   fetchDmMessages,
   groupDmConversations,
-  parseDmShareQuery,
   probeBunkerNip44,
   publishDmMessages,
   resolveDmReadRelays,
   resolveDmWriteRelays,
   type DmConversation,
   type DmMessage,
-  type DmSharePayload,
   type FetchDmMessagesResult,
 } from '@/lib/dm';
 import {
@@ -54,7 +58,6 @@ interface SendDmInput {
   clientId?: string;
   participantPubkeys: string[];
   content: string;
-  share?: DmSharePayload;
 }
 
 interface SendDmMutationContext {
@@ -347,41 +350,19 @@ export function useDmConversations(limit = 200) {
   }
 
   // Inbound filter (#176). Filtered each render — not memoized — so the fresh
-  // sync verdict always applies. Non-restricted users get `grouped` back by
-  // identity, so `useUnreadDmCount` (derived below) is unaffected for them.
-  const conversations = filterProtectedMinorConversations(grouped, {
-    state: minorState,
-    isApproved: (pubkey) =>
-      officialAccountsService.isApprovedMinorDmRecipientSync(pubkey),
-  });
+  // sync verdict always applies before the Support-only visibility policy.
+  const conversations = filterSupportOnlyDmConversations(
+    filterProtectedMinorConversations(grouped, {
+      state: minorState,
+      isApproved: (pubkey) =>
+        officialAccountsService.isApprovedMinorDmRecipientSync(pubkey),
+    }),
+  );
 
   return {
     ...messagesQuery,
     data: conversations,
   };
-}
-
-/**
- * Status of the moderator/user inbox for the current signer.
- *
- * - `loading` — the initial fetch hasn't returned yet.
- * - `ok` — at least one message is visible.
- * - `unavailable` — relays returned wraps but every single one failed to
- *   decrypt. This usually means the signer (typically a NIP-46 bunker) is
- *   rejecting `nip44_decrypt` for this account. UI should render an
- *   explicit "inbox unavailable" state, not the generic empty state.
- * - `empty` — relays returned no wraps OR a partial-decrypt scenario where
- *   we have nothing to show. Render the generic empty state.
- */
-export type DmInboxStatus = 'loading' | 'ok' | 'empty' | 'unavailable';
-
-export function useDmInboxStatus(limit = 200): DmInboxStatus {
-  const { data, isLoading } = useDmMessages(limit);
-  if (isLoading) return 'loading';
-  if (!data) return 'empty';
-  if (data.messages.length > 0) return 'ok';
-  if (data.fetchedCount > 0 && data.decryptFailures === data.fetchedCount) return 'unavailable';
-  return 'empty';
 }
 
 export function useUnreadDmCount(limit = 200) {
@@ -406,6 +387,11 @@ export function useDmConversation(conversationId: string | undefined, limit = 30
   const [, bumpVerdicts] = useReducer((x: number) => x + 1, 0);
   useEffect(() => officialAccountsService.onVerdictChanged(bumpVerdicts), []);
 
+  const routePeerPubkeys = useMemo(
+    () => conversationId ? decodeConversationId(conversationId) : [],
+    [conversationId],
+  );
+
   const threadMessages = useMemo<DmMessage[]>(
     () => (messagesQuery.data?.messages || []).filter((message) => message.conversationId === conversationId),
     [conversationId, messagesQuery.data],
@@ -415,17 +401,17 @@ export function useDmConversation(conversationId: string | undefined, limit = 30
   // is not approved — defense-in-depth alongside ConversationPage's route guard
   // (which redirects asynchronously, so history could otherwise flash). Checked
   // each render so a verdict flip re-applies; peers are revalidated.
-  const peerPubkeys = threadMessages[0]?.peerPubkeys ?? [];
   if (isMinorDmRestricted(minorState)) {
-    for (const pubkey of peerPubkeys) {
+    for (const pubkey of routePeerPubkeys) {
       void officialAccountsService.isApprovedMinorDmRecipient(pubkey);
     }
   }
-  const messages = isThreadAllowedForProtectedMinor(peerPubkeys, {
-    state: minorState,
-    isApproved: (pubkey) =>
-      officialAccountsService.isApprovedMinorDmRecipientSync(pubkey),
-  })
+  const messages = isSupportOnlyDmPeerSet(routePeerPubkeys)
+    && isThreadAllowedForProtectedMinor(routePeerPubkeys, {
+      state: minorState,
+      isApproved: (pubkey) =>
+        officialAccountsService.isApprovedMinorDmRecipientSync(pubkey),
+    })
     ? threadMessages
     : [];
 
@@ -453,27 +439,34 @@ export function useDmSend() {
   const { state: minorState } = useProtectedMinorStatus();
 
   return useMutation<{ relayUrls: string[] }, Error, SendDmInput, SendDmMutationContext>({
-    onMutate: ({ clientId, participantPubkeys, content, share }) => {
+    onMutate: ({ clientId, participantPubkeys, content }) => {
       if (!user?.pubkey) {
         return {};
       }
+
+      // Enforce the support-only policy before writing any outbox record, so a
+      // programmatic non-support send never leaves invisible garbage in outbox
+      // storage. The async protected-minor gate still runs in mutationFn.
+      const recipients = [...new Set(participantPubkeys.filter((pubkey) => pubkey !== user.pubkey))];
+      if (!recipients.length) {
+        // mutationFn reports "Choose at least one person to message".
+        return {};
+      }
+      assertSupportOnlyDmRecipients(recipients);
 
       const record = clientId
         ? markDmOutboxRecordSending(user.pubkey, clientId, {
           participantPubkeys,
           content,
-          share,
         }) || createDmOutboxRecord({
           ownerPubkey: user.pubkey,
           participantPubkeys,
           content,
-          share,
         })
         : createDmOutboxRecord({
           ownerPubkey: user.pubkey,
           participantPubkeys,
           content,
-          share,
         });
 
       const optimisticMessage = convertOutboxRecordToDmMessage(record);
@@ -486,7 +479,7 @@ export function useDmSend() {
         clientId: record.clientId,
       };
     },
-    mutationFn: async ({ participantPubkeys, content, share }: SendDmInput) => {
+    mutationFn: async ({ participantPubkeys, content }: SendDmInput) => {
       if (!user?.pubkey) {
         throw new Error('You need to log in before sending a message');
       }
@@ -500,6 +493,8 @@ export function useDmSend() {
       if (!recipients.length) {
         throw new Error('Choose at least one person to message');
       }
+
+      assertSupportOnlyDmRecipients(recipients);
 
       // Send gate (#176): a restricted user (protected minor, or unknown
       // status — fail closed) may only DM approved official accounts; a group
@@ -517,8 +512,6 @@ export function useDmSend() {
         signal: AbortSignal.timeout(5000),
       });
 
-      const tags = buildDmShareTags(share);
-
       // Primary path: deliver to the recipients. Failure here rejects the
       // mutation so the UI shows the send as failed.
       const recipientWraps = await createRecipientGiftWraps({
@@ -526,7 +519,6 @@ export function useDmSend() {
         senderPubkey: user.pubkey,
         recipientPubkeys: recipients,
         content,
-        additionalTags: tags,
       });
       await publishDmMessages(relayUrls, recipientWraps, AbortSignal.timeout(10000));
 
@@ -539,7 +531,6 @@ export function useDmSend() {
         senderPubkey: user.pubkey,
         recipientPubkeys: recipients,
         content,
-        additionalTags: tags,
       });
       if (selfWrap) {
         try {
@@ -567,15 +558,18 @@ export function useDmSend() {
       // internal error. A definitive block is non-retriable; an unverified
       // block (status unknown) gets retriable framing, since "official accounts
       // only" would be wrong for an adult whose status check merely failed.
+      const isSupportOnly = error instanceof DmSupportOnlyError;
       const isBlocked = error instanceof DmSendBlockedError;
       const isUnverified = error instanceof DmSendUnverifiedError;
-      const description = isBlocked
-        ? 'You can only message official Divine accounts.'
-        : isUnverified
-          ? "We couldn't verify your account just now. Try again in a minute."
-          : error instanceof Error
-            ? error.message
-            : 'Unable to send your message right now';
+      const description = isSupportOnly
+        ? error.message
+        : isBlocked
+          ? 'You can only message official Divine accounts.'
+          : isUnverified
+            ? "We couldn't verify your account just now. Try again in a minute."
+            : error instanceof Error
+              ? error.message
+              : 'Unable to send your message right now';
 
       if (user?.pubkey && context?.clientId) {
         markDmOutboxRecordFailed(user.pubkey, context.clientId, description);
@@ -586,17 +580,10 @@ export function useDmSend() {
       }
 
       toast({
-        title: isBlocked || isUnverified ? 'Message not sent' : 'Message failed',
+        title: isSupportOnly || isBlocked || isUnverified ? 'Message not sent' : 'Message failed',
         description,
         variant: 'destructive',
       });
     },
   });
-}
-
-export function useParsedDmShare(search: string) {
-  return useMemo(
-    () => parseDmShareQuery(new URLSearchParams(search)),
-    [search],
-  );
 }
