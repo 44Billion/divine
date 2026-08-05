@@ -1037,8 +1037,7 @@
       "likes": "پسندیں",
       "comments": "تبصرے",
       "follows": "فالوز",
-      "reposts": "ریپوسٹس",
-      "zaps": "زاپس"
+      "reposts": "ریپوسٹس"
     },
     "empty": {
       "all": {
@@ -1064,16 +1063,33 @@
       "reposts": {
         "title": "ابھی ریپوسٹ کی کوئی نوٹیفیکیشن نہیں۔",
         "description": "آپ کی ویڈیوز کی ریپوسٹس یہاں دکھیں گی۔"
-      },
-      "zaps": {
-        "title": "ابھی زاپ کی کوئی نوٹیفیکیشن نہیں۔",
-        "description": "آپ کی ویڈیوز پر زاپس یہاں دکھیں گے۔"
       }
     },
     "errorTitle": "نوٹیفیکیشنز لوڈ نہیں ہو سکیں",
     "errorFallback": "کچھ دیر بعد دوبارہ کوشش کریں",
     "sectionNew": "نئی",
-    "sectionEarlier": "پہلے کی"
+    "sectionEarlier": "پہلے کی",
+    "message": {
+      "liked": "آپ کی ویڈیو پسند کی",
+      "commented": "آپ کی ویڈیو پر تبصرہ کیا",
+      "reposted": "آپ کی ویڈیو دوبارہ پوسٹ کی",
+      "followed": "آپ کو فالو کیا",
+      "andOthers_one": "اور {{count}} اور",
+      "andOthers_other": "اور {{count}} اور",
+      "likedTitled": "{{title}} کو پسند کیا",
+      "commentedTitled": "{{title}} پر تبصرہ کیا",
+      "repostedTitled": "{{title}} کو دوبارہ پوسٹ کیا",
+      "likedComment": "نے آپ کے تبصرے کو پسند کیا",
+      "likedCommentTitled": "نے {{title}} پر آپ کے تبصرے کو پسند کیا"
+    },
+    "video": {
+      "untitled": "آپ کی ویڈیو"
+    },
+    "a11y": {
+      "openVideo": "{{title}} کھولیں",
+      "viewProfile": "{{name}} کی پروفائل",
+      "unread": "غیر پڑھا ہوا"
+    }
   },
   "getEmbedPage": {
     "title": "Divine ویجیٹ ایمبیڈ کریں",

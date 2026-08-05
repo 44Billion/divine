@@ -1105,8 +1105,7 @@
       "likes": "الإعجابات",
       "comments": "التعليقات",
       "follows": "المتابعات",
-      "reposts": "إعادة النشر",
-      "zaps": "Zaps"
+      "reposts": "إعادة النشر"
     },
     "empty": {
       "all": {
@@ -1132,16 +1131,37 @@
       "reposts": {
         "title": "لا توجد إشعارات إعادة نشر بعد.",
         "description": "ستظهر هنا عمليات إعادة نشر مقاطعك."
-      },
-      "zaps": {
-        "title": "لا توجد إشعارات Zaps بعد.",
-        "description": "ستظهر هنا Zaps على مقاطعك."
       }
     },
     "errorTitle": "تعذّر تحميل الإشعارات",
     "errorFallback": "يرجى المحاولة لاحقًا",
     "sectionNew": "جديد",
-    "sectionEarlier": "في وقت سابق"
+    "sectionEarlier": "في وقت سابق",
+    "message": {
+      "liked": "أعجب بفيديوك",
+      "commented": "علّق على فيديوك",
+      "reposted": "أعاد نشر فيديوك",
+      "followed": "تابعك",
+      "andOthers_zero": "و{{count}} آخر",
+      "andOthers_one": "و{{count}} آخر",
+      "andOthers_two": "و{{count}} آخرَان",
+      "andOthers_few": "و{{count}} آخرون",
+      "andOthers_many": "و{{count}} آخرًا",
+      "andOthers_other": "و{{count}} آخرون",
+      "likedTitled": "أعجب بـ {{title}}",
+      "commentedTitled": "علّق على {{title}}",
+      "repostedTitled": "أعاد نشر {{title}}",
+      "likedComment": "أعجب بتعليقك",
+      "likedCommentTitled": "أعجب بتعليقك على {{title}}"
+    },
+    "video": {
+      "untitled": "فيديوك"
+    },
+    "a11y": {
+      "openVideo": "فتح {{title}}",
+      "viewProfile": "الملف الشخصي لـ {{name}}",
+      "unread": "غير مقروءة"
+    }
   },
   "getEmbedPage": {
     "title": "تضمين أداة Divine",

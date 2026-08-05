@@ -1037,8 +1037,7 @@
       "likes": "Gillamarkeringar",
       "comments": "Kommentarer",
       "follows": "Följare",
-      "reposts": "Återpubliceringar",
-      "zaps": "Zaps"
+      "reposts": "Återpubliceringar"
     },
     "empty": {
       "all": {
@@ -1064,16 +1063,33 @@
       "reposts": {
         "title": "Inga återpubliceringsnotiser än.",
         "description": "Återpubliceringar av dina videor dyker upp här."
-      },
-      "zaps": {
-        "title": "Inga zap-notiser än.",
-        "description": "Zaps på dina videor dyker upp här."
       }
     },
     "errorTitle": "Kunde inte ladda notiser",
     "errorFallback": "Försök igen senare",
     "sectionNew": "Nytt",
-    "sectionEarlier": "Tidigare"
+    "sectionEarlier": "Tidigare",
+    "message": {
+      "liked": "gillade din video",
+      "commented": "kommenterade din video",
+      "reposted": "delade din video",
+      "followed": "följer dig nu",
+      "andOthers_one": "och {{count}} annan",
+      "andOthers_other": "och {{count}} andra",
+      "likedTitled": "gillade {{title}}",
+      "commentedTitled": "kommenterade {{title}}",
+      "repostedTitled": "delade {{title}}",
+      "likedComment": "gillade din kommentar",
+      "likedCommentTitled": "gillade din kommentar på {{title}}"
+    },
+    "video": {
+      "untitled": "din video"
+    },
+    "a11y": {
+      "openVideo": "Öppna {{title}}",
+      "viewProfile": "{{name}}s profil",
+      "unread": "Oläst"
+    }
   },
   "getEmbedPage": {
     "title": "Bädda in Divine-widget",

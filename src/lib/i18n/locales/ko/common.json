@@ -1037,8 +1037,7 @@
       "likes": "좋아요",
       "comments": "댓글",
       "follows": "팔로우",
-      "reposts": "리포스트",
-      "zaps": "잽"
+      "reposts": "리포스트"
     },
     "empty": {
       "all": {
@@ -1064,16 +1063,33 @@
       "reposts": {
         "title": "아직 리포스트 알림이 없어요.",
         "description": "회원님 비디오의 리포스트가 여기에 표시돼요."
-      },
-      "zaps": {
-        "title": "아직 잽 알림이 없어요.",
-        "description": "회원님 비디오에 받은 잽이 여기에 표시돼요."
       }
     },
     "errorTitle": "알림을 불러오지 못했어요",
     "errorFallback": "잠시 후 다시 시도해 주세요",
     "sectionNew": "새로운 소식",
-    "sectionEarlier": "이전"
+    "sectionEarlier": "이전",
+    "message": {
+      "liked": "회원님의 비디오를 좋아합니다",
+      "commented": "회원님의 비디오에 댓글을 남겼습니다",
+      "reposted": "회원님의 비디오를 리포스트했습니다",
+      "followed": "회원님을 팔로우했습니다",
+      "andOthers_one": "외 {{count}}명",
+      "andOthers_other": "외 {{count}}명",
+      "likedTitled": "{{title}}을(를) 좋아합니다",
+      "commentedTitled": "{{title}}에 댓글을 남겼습니다",
+      "repostedTitled": "{{title}}을(를) 리포스트했습니다",
+      "likedComment": "회원님의 댓글을 좋아합니다",
+      "likedCommentTitled": "{{title}}에 남긴 회원님의 댓글을 좋아합니다"
+    },
+    "video": {
+      "untitled": "회원님의 비디오"
+    },
+    "a11y": {
+      "openVideo": "{{title}} 열기",
+      "viewProfile": "{{name}} 프로필",
+      "unread": "읽지 않음"
+    }
   },
   "getEmbedPage": {
     "title": "Divine 위젯 임베드",

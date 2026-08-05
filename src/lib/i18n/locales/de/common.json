@@ -1037,8 +1037,7 @@
       "likes": "Likes",
       "comments": "Kommentare",
       "follows": "Follows",
-      "reposts": "Reposts",
-      "zaps": "Zaps"
+      "reposts": "Reposts"
     },
     "empty": {
       "all": {
@@ -1064,16 +1063,33 @@
       "reposts": {
         "title": "Noch keine Repost-Benachrichtigungen.",
         "description": "Reposts deiner Videos tauchen hier auf."
-      },
-      "zaps": {
-        "title": "Noch keine Zap-Benachrichtigungen.",
-        "description": "Zaps auf deine Videos erscheinen hier."
       }
     },
     "errorTitle": "Benachrichtigungen konnten nicht geladen werden",
     "errorFallback": "Versuch es später nochmal",
     "sectionNew": "Neu",
-    "sectionEarlier": "Älter"
+    "sectionEarlier": "Älter",
+    "message": {
+      "liked": "gefällt dein Video",
+      "commented": "hat dein Video kommentiert",
+      "reposted": "hat dein Video geteilt",
+      "followed": "folgt dir jetzt",
+      "andOthers_one": "und {{count}} weitere Person",
+      "andOthers_other": "und {{count}} weitere Personen",
+      "likedTitled": "gefällt {{title}}",
+      "commentedTitled": "hat {{title}} kommentiert",
+      "repostedTitled": "hat {{title}} geteilt",
+      "likedComment": "gefällt dein Kommentar",
+      "likedCommentTitled": "gefällt dein Kommentar zu {{title}}"
+    },
+    "video": {
+      "untitled": "dein Video"
+    },
+    "a11y": {
+      "openVideo": "{{title}} öffnen",
+      "viewProfile": "Profil von {{name}}",
+      "unread": "Ungelesen"
+    }
   },
   "getEmbedPage": {
     "title": "Divine-Widget einbetten",

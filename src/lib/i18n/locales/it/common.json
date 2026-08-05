@@ -1037,8 +1037,7 @@
       "likes": "Mi piace",
       "comments": "Commenti",
       "follows": "Follower",
-      "reposts": "Ripubblicazioni",
-      "zaps": "Zap"
+      "reposts": "Ripubblicazioni"
     },
     "empty": {
       "all": {
@@ -1064,16 +1063,34 @@
       "reposts": {
         "title": "Ancora nessuna ripubblicazione.",
         "description": "Le ripubblicazioni dei tuoi video appariranno qui."
-      },
-      "zaps": {
-        "title": "Ancora nessuno zap.",
-        "description": "Gli zap sui tuoi video appariranno qui."
       }
     },
     "errorTitle": "Caricamento notifiche fallito",
     "errorFallback": "Riprova più tardi",
     "sectionNew": "Nuove",
-    "sectionEarlier": "Precedenti"
+    "sectionEarlier": "Precedenti",
+    "message": {
+      "liked": "ha messo mi piace al tuo video",
+      "commented": "ha commentato il tuo video",
+      "reposted": "ha ricondiviso il tuo video",
+      "followed": "ha iniziato a seguirti",
+      "andOthers_one": "e {{count}} altro",
+      "andOthers_other": "e altri {{count}}",
+      "likedTitled": "ha messo mi piace a {{title}}",
+      "commentedTitled": "ha commentato {{title}}",
+      "repostedTitled": "ha ricondiviso {{title}}",
+      "andOthers_many": "e altri {{count}}",
+      "likedComment": "ha messo mi piace al tuo commento",
+      "likedCommentTitled": "ha messo mi piace al tuo commento su {{title}}"
+    },
+    "video": {
+      "untitled": "il tuo video"
+    },
+    "a11y": {
+      "openVideo": "Apri {{title}}",
+      "viewProfile": "Profilo di {{name}}",
+      "unread": "Non letta"
+    }
   },
   "getEmbedPage": {
     "title": "Incorpora il widget Divine",

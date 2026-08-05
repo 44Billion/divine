@@ -1037,8 +1037,7 @@
       "likes": "J'aime",
       "comments": "Commentaires",
       "follows": "Abonnements",
-      "reposts": "Reposts",
-      "zaps": "Zaps"
+      "reposts": "Reposts"
     },
     "empty": {
       "all": {
@@ -1064,16 +1063,34 @@
       "reposts": {
         "title": "Pas encore de notifications de reposts.",
         "description": "Les reposts de tes vidéos apparaîtront ici."
-      },
-      "zaps": {
-        "title": "Pas encore de notifications de zaps.",
-        "description": "Les zaps sur tes vidéos s'afficheront ici."
       }
     },
     "errorTitle": "Échec du chargement des notifications",
     "errorFallback": "Réessaie plus tard",
     "sectionNew": "Nouveau",
-    "sectionEarlier": "Plus tôt"
+    "sectionEarlier": "Plus tôt",
+    "message": {
+      "liked": "a aimé ta vidéo",
+      "commented": "a commenté ta vidéo",
+      "reposted": "a republié ta vidéo",
+      "followed": "t'a suivi",
+      "andOthers_one": "et {{count}} autre",
+      "andOthers_other": "et {{count}} autres",
+      "likedTitled": "a aimé {{title}}",
+      "commentedTitled": "a commenté {{title}}",
+      "repostedTitled": "a republié {{title}}",
+      "andOthers_many": "et {{count}} autres",
+      "likedComment": "a aimé ton commentaire",
+      "likedCommentTitled": "a aimé ton commentaire sur {{title}}"
+    },
+    "video": {
+      "untitled": "ta vidéo"
+    },
+    "a11y": {
+      "openVideo": "Ouvrir {{title}}",
+      "viewProfile": "Profil de {{name}}",
+      "unread": "Non lue"
+    }
   },
   "getEmbedPage": {
     "title": "Intégrer le widget Divine",

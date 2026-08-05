@@ -1037,8 +1037,7 @@
       "likes": "Curtidas",
       "comments": "Comentários",
       "follows": "Seguidores",
-      "reposts": "Reposts",
-      "zaps": "Zaps"
+      "reposts": "Reposts"
     },
     "empty": {
       "all": {
@@ -1064,16 +1063,34 @@
       "reposts": {
         "title": "Nenhuma notificação de repost ainda.",
         "description": "Reposts dos seus vídeos aparecem aqui."
-      },
-      "zaps": {
-        "title": "Nenhuma notificação de zap ainda.",
-        "description": "Zaps nos seus vídeos aparecem aqui."
       }
     },
     "errorTitle": "Falha ao carregar notificações",
     "errorFallback": "Tenta de novo daqui a pouco",
     "sectionNew": "Novas",
-    "sectionEarlier": "Anteriores"
+    "sectionEarlier": "Anteriores",
+    "message": {
+      "liked": "curtiu seu vídeo",
+      "commented": "comentou no seu vídeo",
+      "reposted": "repostou seu vídeo",
+      "followed": "começou a te seguir",
+      "andOthers_one": "e mais {{count}}",
+      "andOthers_other": "e mais {{count}}",
+      "likedTitled": "curtiu {{title}}",
+      "commentedTitled": "comentou em {{title}}",
+      "repostedTitled": "repostou {{title}}",
+      "andOthers_many": "e mais {{count}}",
+      "likedComment": "curtiu seu comentário",
+      "likedCommentTitled": "curtiu seu comentário em {{title}}"
+    },
+    "video": {
+      "untitled": "seu vídeo"
+    },
+    "a11y": {
+      "openVideo": "Abrir {{title}}",
+      "viewProfile": "Perfil de {{name}}",
+      "unread": "Não lida"
+    }
   },
   "getEmbedPage": {
     "title": "Embedar widget Divine",

@@ -1037,8 +1037,7 @@
       "likes": "Likes",
       "comments": "Comments",
       "follows": "Follows",
-      "reposts": "Reposts",
-      "zaps": "Zaps"
+      "reposts": "Reposts"
     },
     "empty": {
       "all": {
@@ -1064,16 +1063,33 @@
       "reposts": {
         "title": "No repost notifications yet.",
         "description": "Reposts of your videos will show up here."
-      },
-      "zaps": {
-        "title": "No zap notifications yet.",
-        "description": "Zaps on your videos will show up here."
       }
+    },
+    "message": {
+      "liked": "liked your video",
+      "commented": "commented on your video",
+      "reposted": "reposted your video",
+      "followed": "followed you",
+      "andOthers_one": "and {{count}} other",
+      "andOthers_other": "and {{count}} others",
+      "likedTitled": "liked {{title}}",
+      "commentedTitled": "commented on {{title}}",
+      "repostedTitled": "reposted {{title}}",
+      "likedComment": "liked your comment",
+      "likedCommentTitled": "liked your comment on {{title}}"
+    },
+    "video": {
+      "untitled": "your video"
     },
     "errorTitle": "Failed to load notifications",
     "errorFallback": "Please try again later",
     "sectionNew": "New",
-    "sectionEarlier": "Earlier"
+    "sectionEarlier": "Earlier",
+    "a11y": {
+      "openVideo": "Open {{title}}",
+      "viewProfile": "{{name}} profile",
+      "unread": "Unread"
+    }
   },
   "getEmbedPage": {
     "title": "Embed Divine Widget",

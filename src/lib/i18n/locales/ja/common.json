@@ -1037,8 +1037,7 @@
       "likes": "いいね",
       "comments": "コメント",
       "follows": "フォロー",
-      "reposts": "リポスト",
-      "zaps": "Zap"
+      "reposts": "リポスト"
     },
     "empty": {
       "all": {
@@ -1064,16 +1063,33 @@
       "reposts": {
         "title": "リポストの通知はまだありません。",
         "description": "あなたの動画のリポストがここに表示されます。"
-      },
-      "zaps": {
-        "title": "Zapの通知はまだありません。",
-        "description": "動画へのZapがここに表示されます。"
       }
     },
     "errorTitle": "通知の読み込みに失敗しました",
     "errorFallback": "あとでもう一度お試しください",
     "sectionNew": "新着",
-    "sectionEarlier": "これまで"
+    "sectionEarlier": "これまで",
+    "message": {
+      "liked": "あなたの動画に「いいね」しました",
+      "commented": "あなたの動画にコメントしました",
+      "reposted": "あなたの動画をリポストしました",
+      "followed": "あなたをフォローしました",
+      "andOthers_one": "他{{count}}人",
+      "andOthers_other": "他{{count}}人",
+      "likedTitled": "{{title}}に「いいね」しました",
+      "commentedTitled": "{{title}}にコメントしました",
+      "repostedTitled": "{{title}}をリポストしました",
+      "likedComment": "あなたのコメントにいいねしました",
+      "likedCommentTitled": "{{title}} へのあなたのコメントにいいねしました"
+    },
+    "video": {
+      "untitled": "あなたの動画"
+    },
+    "a11y": {
+      "openVideo": "{{title}}を開く",
+      "viewProfile": "{{name}}のプロフィール",
+      "unread": "未読"
+    }
   },
   "getEmbedPage": {
     "title": "Divineウィジェットを埋め込む",

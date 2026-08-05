@@ -1037,8 +1037,7 @@
       "likes": "Aprecieri",
       "comments": "Comentarii",
       "follows": "Urmăriri",
-      "reposts": "Repostări",
-      "zaps": "Zaps"
+      "reposts": "Repostări"
     },
     "empty": {
       "all": {
@@ -1064,16 +1063,34 @@
       "reposts": {
         "title": "Nicio repostare încă.",
         "description": "Repostările videoclipurilor tale apar aici."
-      },
-      "zaps": {
-        "title": "Niciun zap încă.",
-        "description": "Zaps-urile pe videoclipurile tale apar aici."
       }
     },
     "errorTitle": "Notificările n-au putut fi încărcate",
     "errorFallback": "Încearcă din nou mai târziu",
     "sectionNew": "Noi",
-    "sectionEarlier": "Mai vechi"
+    "sectionEarlier": "Mai vechi",
+    "message": {
+      "liked": "ți-a apreciat videoclipul",
+      "commented": "a comentat la videoclipul tău",
+      "reposted": "ți-a redistribuit videoclipul",
+      "followed": "a început să te urmărească",
+      "likedTitled": "a apreciat {{title}}",
+      "commentedTitled": "a comentat la {{title}}",
+      "repostedTitled": "a redistribuit {{title}}",
+      "andOthers_one": "și încă {{count}}",
+      "andOthers_few": "și încă {{count}}",
+      "andOthers_other": "și alți {{count}}",
+      "likedComment": "a apreciat comentariul tău",
+      "likedCommentTitled": "a apreciat comentariul tău la {{title}}"
+    },
+    "video": {
+      "untitled": "videoclipul tău"
+    },
+    "a11y": {
+      "openVideo": "Deschide {{title}}",
+      "viewProfile": "Profilul {{name}}",
+      "unread": "Necitită"
+    }
   },
   "getEmbedPage": {
     "title": "Inserează widget-ul Divine",

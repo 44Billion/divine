@@ -1037,8 +1037,7 @@
       "likes": "Mga Like",
       "comments": "Mga Komento",
       "follows": "Mga Follow",
-      "reposts": "Mga Repost",
-      "zaps": "Mga Zap"
+      "reposts": "Mga Repost"
     },
     "empty": {
       "all": {
@@ -1064,16 +1063,33 @@
       "reposts": {
         "title": "Wala pang abiso ng repost.",
         "description": "Lalabas dito ang mga repost ng mga video mo."
-      },
-      "zaps": {
-        "title": "Wala pang abiso ng zap.",
-        "description": "Lalabas dito ang mga zap sa mga video mo."
       }
     },
     "errorTitle": "Hindi na-load ang mga abiso",
     "errorFallback": "Pakisubukang muli mamaya",
     "sectionNew": "Bago",
-    "sectionEarlier": "Mas Maaga"
+    "sectionEarlier": "Mas Maaga",
+    "message": {
+      "liked": "nag-like ng video mo",
+      "commented": "nag-comment sa video mo",
+      "reposted": "nag-repost ng video mo",
+      "followed": "nag-follow sa iyo",
+      "andOthers_one": "at {{count}} pa",
+      "andOthers_other": "at {{count}} pa",
+      "likedTitled": "nag-like ng {{title}}",
+      "commentedTitled": "nag-comment sa {{title}}",
+      "repostedTitled": "nag-repost ng {{title}}",
+      "likedComment": "nag-like sa komento mo",
+      "likedCommentTitled": "nag-like sa komento mo sa {{title}}"
+    },
+    "video": {
+      "untitled": "video mo"
+    },
+    "a11y": {
+      "openVideo": "Buksan ang {{title}}",
+      "viewProfile": "Profile ni {{name}}",
+      "unread": "Hindi pa nababasa"
+    }
   },
   "getEmbedPage": {
     "title": "I-embed ang Divine Widget",

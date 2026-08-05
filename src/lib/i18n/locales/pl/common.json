@@ -1037,8 +1037,7 @@
       "likes": "Polubienia",
       "comments": "Komentarze",
       "follows": "Obserwujący",
-      "reposts": "Udostępnienia",
-      "zaps": "Zapy"
+      "reposts": "Udostępnienia"
     },
     "empty": {
       "all": {
@@ -1064,16 +1063,35 @@
       "reposts": {
         "title": "Brak powiadomień o udostępnieniach.",
         "description": "Udostępnienia twoich filmów pojawią się tutaj."
-      },
-      "zaps": {
-        "title": "Brak powiadomień o zapach.",
-        "description": "Zapy do twoich filmów pojawią się tutaj."
       }
     },
     "errorTitle": "Nie udało się załadować powiadomień",
     "errorFallback": "Spróbuj ponownie później",
     "sectionNew": "Nowe",
-    "sectionEarlier": "Wcześniejsze"
+    "sectionEarlier": "Wcześniejsze",
+    "message": {
+      "liked": "polubił(a) twój film",
+      "commented": "skomentował(a) twój film",
+      "reposted": "udostępnił(a) twój film",
+      "followed": "zaczął(a) cię obserwować",
+      "likedTitled": "polubił(a) {{title}}",
+      "commentedTitled": "skomentował(a) {{title}}",
+      "repostedTitled": "udostępnił(a) {{title}}",
+      "andOthers_one": "i {{count}} inna osoba",
+      "andOthers_few": "i {{count}} inne osoby",
+      "andOthers_many": "i {{count}} innych osób",
+      "andOthers_other": "i {{count}} innych osób",
+      "likedComment": "polubił(a) Twój komentarz",
+      "likedCommentTitled": "polubił(a) Twój komentarz pod {{title}}"
+    },
+    "video": {
+      "untitled": "twój film"
+    },
+    "a11y": {
+      "openVideo": "Otwórz {{title}}",
+      "viewProfile": "Profil {{name}}",
+      "unread": "Nieprzeczytane"
+    }
   },
   "getEmbedPage": {
     "title": "Osadź widget Divine",

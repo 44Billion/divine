@@ -1037,8 +1037,7 @@
       "likes": "Likes",
       "comments": "Reacties",
       "follows": "Volgers",
-      "reposts": "Reposts",
-      "zaps": "Zaps"
+      "reposts": "Reposts"
     },
     "empty": {
       "all": {
@@ -1064,16 +1063,33 @@
       "reposts": {
         "title": "Nog geen repost-notificaties.",
         "description": "Reposts van je video's verschijnen hier."
-      },
-      "zaps": {
-        "title": "Nog geen zap-notificaties.",
-        "description": "Zaps op je video's verschijnen hier."
       }
     },
     "errorTitle": "Notificaties laden mislukt",
     "errorFallback": "Probeer het later nog eens",
     "sectionNew": "Nieuw",
-    "sectionEarlier": "Eerder"
+    "sectionEarlier": "Eerder",
+    "message": {
+      "liked": "vindt je video leuk",
+      "commented": "reageerde op je video",
+      "reposted": "deelde je video",
+      "followed": "volgt je nu",
+      "andOthers_one": "en {{count}} ander",
+      "andOthers_other": "en {{count}} anderen",
+      "likedTitled": "vindt {{title}} leuk",
+      "commentedTitled": "reageerde op {{title}}",
+      "repostedTitled": "deelde {{title}}",
+      "likedComment": "vindt je reactie leuk",
+      "likedCommentTitled": "vindt je reactie op {{title}} leuk"
+    },
+    "video": {
+      "untitled": "je video"
+    },
+    "a11y": {
+      "openVideo": "{{title}} openen",
+      "viewProfile": "Profiel van {{name}}",
+      "unread": "Ongelezen"
+    }
   },
   "getEmbedPage": {
     "title": "Divine-widget embedden",
