@@ -26,6 +26,7 @@ import { buildPeopleListPath } from '@/lib/eventRouting';
 import { debugLog } from '@/lib/debug';
 import { getVisiblePlaybackCount } from '@/lib/playbackCount';
 import { reportFunnelcakeFallback } from '@/lib/funnelcakeFallbackReporting';
+import { buildVideoLikeTags } from '@/lib/buildVideoLikeTags';
 import type { ParsedVideoData, UserInteractions } from '@/types/video';
 
 export function VideoPage() {
@@ -309,10 +310,11 @@ export function VideoPage() {
       await publishEvent({
         kind: 7, // Reaction event
         content: '+', // Positive reaction
-        tags: [
-          ['e', video.id], // Reference to the video event
-          ['p', video.pubkey], // Reference to the video author
-        ],
+        tags: buildVideoLikeTags({
+          videoId: video.id,
+          videoPubkey: video.pubkey,
+          vineId: video.vineId,
+        }),
       });
 
       toast({
