@@ -13,7 +13,7 @@ import {
   PEOPLE_LIST_KIND,
   type PeopleList,
 } from '@/lib/parsePeopleListFromEvent';
-import { isHex64 } from '@/lib/nostrCoordinates';
+import { buildAddressableCoordinate, isHex64 } from '@/lib/nostrCoordinates';
 
 interface CreatePeopleListInput {
   id: string;
@@ -35,6 +35,10 @@ interface MemberMutationInput {
   memberPubkey: string;
 }
 
+interface DeletePeopleListInput {
+  listId: string;
+}
+
 function peopleListQueryKey(pubkey: string, listId: string) {
   return ['people-list', pubkey, listId] as const;
 }
@@ -43,8 +47,10 @@ function peopleListsQueryKey(pubkey: string) {
   return ['people-lists', pubkey] as const;
 }
 
+// Hex pubkeys are case-insensitive, so fold to lower case before deduplicating —
+// otherwise the same member can be tagged twice in two different casings.
 function uniqueHexPubkeys(pubkeys: string[]): string[] {
-  return Array.from(new Set(pubkeys.filter(isHex64)));
+  return Array.from(new Set(pubkeys.filter(isHex64).map((pubkey) => pubkey.toLowerCase())));
 }
 
 function removeTags(tags: string[][], names: Set<string>): string[][] {
@@ -78,7 +84,8 @@ function withMemberTags(originalTags: string[][], memberPubkeys: string[]): stri
   for (const tag of originalTags) {
     if (tag[0] !== 'p') continue;
     if (tag[1] && isHex64(tag[1])) {
-      if (!existingPTags.has(tag[1])) existingPTags.set(tag[1], tag);
+      const pubkey = tag[1].toLowerCase();
+      if (!existingPTags.has(pubkey)) existingPTags.set(pubkey, tag);
     } else {
       preservedPTags.push(tag);
     }
@@ -111,6 +118,23 @@ async function fetchCurrentPeopleListEvent(
   if (!event) throw new Error('People list not found');
 
   return { event, list: eventToPeopleList(event) };
+}
+
+/**
+ * Mirrors what `withMetadataTags` publishes: an omitted field keeps the current
+ * value, and an empty one clears the tag — which makes the parsed name fall
+ * back to the d tag.
+ */
+function withMetadata(
+  list: PeopleList,
+  metadata: { name?: string; description?: string; image?: string },
+): PeopleList {
+  return {
+    ...list,
+    name: metadata.name === undefined ? list.name : metadata.name || list.id,
+    description: metadata.description === undefined ? list.description : metadata.description || undefined,
+    image: metadata.image === undefined ? list.image : metadata.image || undefined,
+  };
 }
 
 function updateListCache(
@@ -185,6 +209,35 @@ export function useUpdatePeopleList() {
         tags,
       });
     },
+    onMutate: async ({ listId, name, description, image }) => {
+      if (!user) return undefined;
+      const listKey = peopleListQueryKey(user.pubkey, listId);
+      const listsKey = peopleListsQueryKey(user.pubkey);
+
+      await queryClient.cancelQueries({ queryKey: listKey });
+      await queryClient.cancelQueries({ queryKey: listsKey });
+
+      const previousList = queryClient.getQueryData<PeopleList | null>(listKey);
+      const previousLists = queryClient.getQueryData<PeopleList[]>(listsKey);
+
+      const update = (list: PeopleList | null | undefined): PeopleList | null | undefined => (
+        list ? withMetadata(list, { name, description, image }) : list
+      );
+
+      queryClient.setQueryData<PeopleList | null>(listKey, update);
+      queryClient.setQueryData<PeopleList[]>(listsKey, (oldLists) => {
+        const list = update(oldLists?.find((item) => item.id === listId && item.pubkey === user.pubkey));
+        if (!list) return oldLists;
+        return updateListCache(oldLists, list);
+      });
+
+      return { listKey, listsKey, previousList, previousLists };
+    },
+    onError: (_error, _variables, context) => {
+      if (!context) return;
+      queryClient.setQueryData(context.listKey, context.previousList);
+      queryClient.setQueryData(context.listsKey, context.previousLists);
+    },
     onSuccess: (_data, variables) => {
       if (!user) return;
       queryClient.invalidateQueries({ queryKey: peopleListsQueryKey(user.pubkey) });
@@ -203,18 +256,20 @@ export function useAddToPeopleList() {
     mutationFn: async ({ listId, memberPubkey }: MemberMutationInput) => {
       if (!user) throw new Error('Must be logged in to update people lists');
       if (!isHex64(memberPubkey)) throw new Error('Invalid member pubkey');
+      const normalizedMemberPubkey = memberPubkey.toLowerCase();
 
       const { event, list } = await fetchCurrentPeopleListEvent(nostr, user.pubkey, listId);
-      if (list.memberPubkeys.includes(memberPubkey)) return;
+      if (list.memberPubkeys.includes(normalizedMemberPubkey)) return;
 
       await publishEvent({
         kind: PEOPLE_LIST_KIND,
         content: event.content,
-        tags: withMemberTags(event.tags, [...list.memberPubkeys, memberPubkey]),
+        tags: withMemberTags(event.tags, [...list.memberPubkeys, normalizedMemberPubkey]),
       });
     },
     onMutate: async ({ listId, memberPubkey }) => {
       if (!user) return undefined;
+      const normalizedMemberPubkey = memberPubkey.toLowerCase();
       const listKey = peopleListQueryKey(user.pubkey, listId);
       const listsKey = peopleListsQueryKey(user.pubkey);
 
@@ -225,8 +280,8 @@ export function useAddToPeopleList() {
       const previousLists = queryClient.getQueryData<PeopleList[]>(listsKey);
 
       const update = (list: PeopleList | null | undefined): PeopleList | null | undefined => {
-        if (!list || list.memberPubkeys.includes(memberPubkey)) return list;
-        return { ...list, memberPubkeys: [...list.memberPubkeys, memberPubkey] };
+        if (!list || list.memberPubkeys.includes(normalizedMemberPubkey)) return list;
+        return { ...list, memberPubkeys: [...list.memberPubkeys, normalizedMemberPubkey] };
       };
 
       queryClient.setQueryData<PeopleList | null>(listKey, update);
@@ -261,21 +316,23 @@ export function useRemoveFromPeopleList() {
     mutationFn: async ({ listId, memberPubkey }: MemberMutationInput) => {
       if (!user) throw new Error('Must be logged in to update people lists');
       if (!isHex64(memberPubkey)) throw new Error('Invalid member pubkey');
+      const normalizedMemberPubkey = memberPubkey.toLowerCase();
 
       const { event, list } = await fetchCurrentPeopleListEvent(nostr, user.pubkey, listId);
-      if (!list.memberPubkeys.includes(memberPubkey)) return;
+      if (!list.memberPubkeys.includes(normalizedMemberPubkey)) return;
 
       await publishEvent({
         kind: PEOPLE_LIST_KIND,
         content: event.content,
         tags: withMemberTags(
           event.tags,
-          list.memberPubkeys.filter((pubkey) => pubkey !== memberPubkey),
+          list.memberPubkeys.filter((pubkey) => pubkey !== normalizedMemberPubkey),
         ),
       });
     },
     onMutate: async ({ listId, memberPubkey }) => {
       if (!user) return undefined;
+      const normalizedMemberPubkey = memberPubkey.toLowerCase();
       const listKey = peopleListQueryKey(user.pubkey, listId);
       const listsKey = peopleListsQueryKey(user.pubkey);
 
@@ -289,7 +346,7 @@ export function useRemoveFromPeopleList() {
         if (!list) return list;
         return {
           ...list,
-          memberPubkeys: list.memberPubkeys.filter((pubkey) => pubkey !== memberPubkey),
+          memberPubkeys: list.memberPubkeys.filter((pubkey) => pubkey !== normalizedMemberPubkey),
         };
       };
 
@@ -310,6 +367,39 @@ export function useRemoveFromPeopleList() {
     onSuccess: (_data, variables) => {
       if (!user) return;
       queryClient.invalidateQueries({ queryKey: peopleListsQueryKey(user.pubkey) });
+      queryClient.invalidateQueries({ queryKey: peopleListQueryKey(user.pubkey, variables.listId) });
+    },
+  });
+}
+
+export function useDeletePeopleList() {
+  const { mutateAsync: publishEvent } = useNostrPublish();
+  const queryClient = useQueryClient();
+  const { user } = useCurrentUser();
+
+  return useMutation({
+    mutationFn: async ({ listId }: DeletePeopleListInput) => {
+      if (!user) throw new Error('Must be logged in to delete people lists');
+
+      await publishEvent({
+        kind: 5,
+        content: 'People list deleted by owner',
+        tags: [
+          ['a', buildAddressableCoordinate(PEOPLE_LIST_KIND, user.pubkey, listId)],
+          ['k', String(PEOPLE_LIST_KIND)],
+        ],
+      });
+    },
+    onSuccess: (_data, variables) => {
+      if (!user) return;
+      const listsKey = peopleListsQueryKey(user.pubkey);
+
+      queryClient.setQueryData<PeopleList[]>(
+        listsKey,
+        (oldLists) => oldLists?.filter((list) => list.id !== variables.listId) ?? [],
+      );
+      queryClient.setQueryData(peopleListQueryKey(user.pubkey, variables.listId), null);
+      queryClient.invalidateQueries({ queryKey: listsKey });
       queryClient.invalidateQueries({ queryKey: peopleListQueryKey(user.pubkey, variables.listId) });
     },
   });

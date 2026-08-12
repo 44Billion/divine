@@ -126,6 +126,22 @@ describe('usePeopleListMutations', () => {
     });
   });
 
+  it('folds member pubkey casing so one member is tagged once', async () => {
+    mockNostrQuery.mockResolvedValue([]);
+    const { useCreatePeopleList } = await import('./usePeopleListMutations');
+    const { result } = renderHook(() => useCreatePeopleList(), { wrapper: createWrapper() });
+
+    await result.current.mutateAsync({
+      id: 'makers',
+      name: 'Makers',
+      memberPubkeys: [ALICE.toUpperCase(), ALICE],
+    });
+
+    expect(mockPublishAsync.mock.calls[0][0].tags.filter((tag: string[]) => tag[0] === 'p')).toEqual([
+      ['p', ALICE],
+    ]);
+  });
+
   it('refuses to create with invalid member pubkeys', async () => {
     mockNostrQuery.mockResolvedValue([]);
     const { useCreatePeopleList } = await import('./usePeopleListMutations');
@@ -325,6 +341,29 @@ describe('usePeopleListMutations', () => {
     expect(mockPublishAsync).not.toHaveBeenCalled();
   });
 
+  it('treats uppercase member input as the same key for add and remove', async () => {
+    const { useAddToPeopleList, useRemoveFromPeopleList } = await import('./usePeopleListMutations');
+    const wrapper = createWrapper();
+    const add = renderHook(() => useAddToPeopleList(), { wrapper });
+    const remove = renderHook(() => useRemoveFromPeopleList(), { wrapper });
+
+    await add.result.current.mutateAsync({ listId: 'friends', memberPubkey: ALICE.toUpperCase() });
+    expect(mockPublishAsync).not.toHaveBeenCalled();
+
+    await remove.result.current.mutateAsync({ listId: 'friends', memberPubkey: BOB.toUpperCase() });
+    expect(mockPublishAsync).toHaveBeenCalledWith({
+      kind: 30000,
+      content: 'encrypted-private-members',
+      tags: [
+        ['d', 'friends'],
+        ['title', 'Friends'],
+        ['description', 'Good people'],
+        ['custom', 'keep-me'],
+        ['p', ALICE, 'wss://relay.example'],
+      ],
+    });
+  });
+
   it('rolls back optimistic member updates when publish fails', async () => {
     mockPublishAsync.mockRejectedValue(new Error('relay failed'));
     const queryClient = new QueryClient({
@@ -348,5 +387,106 @@ describe('usePeopleListMutations', () => {
       expect(queryClient.getQueryData(['people-list', OWNER, 'friends'])).toEqual(previousList);
       expect(queryClient.getQueryData(['people-lists', OWNER])).toEqual([previousList]);
     });
+  });
+
+  it('applies metadata optimistically and rolls back when publish fails', async () => {
+    mockPublishAsync.mockRejectedValue(new Error('relay failed'));
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false },
+        mutations: { retry: false },
+      },
+    });
+    const previousList = cachedList();
+    queryClient.setQueryData(['people-list', OWNER, 'friends'], previousList);
+    queryClient.setQueryData(['people-lists', OWNER], [previousList]);
+
+    const { useUpdatePeopleList } = await import('./usePeopleListMutations');
+    const { result } = renderHook(() => useUpdatePeopleList(), { wrapper: createWrapper(queryClient) });
+
+    await expect(result.current.mutateAsync({
+      listId: 'friends',
+      name: 'Best friends',
+      description: '',
+    })).rejects.toThrow('relay failed');
+
+    await waitFor(() => {
+      expect(queryClient.getQueryData(['people-list', OWNER, 'friends'])).toEqual(previousList);
+      expect(queryClient.getQueryData(['people-lists', OWNER])).toEqual([previousList]);
+    });
+  });
+
+  it('clears cleared metadata optimistically before the relay answers', async () => {
+    let resolvePublish: (() => void) | undefined;
+    mockPublishAsync.mockImplementation(() => new Promise<void>((resolve) => {
+      resolvePublish = resolve;
+    }));
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false },
+        mutations: { retry: false },
+      },
+    });
+    queryClient.setQueryData(['people-list', OWNER, 'friends'], cachedList());
+
+    const { useUpdatePeopleList } = await import('./usePeopleListMutations');
+    const { result } = renderHook(() => useUpdatePeopleList(), { wrapper: createWrapper(queryClient) });
+
+    const pending = result.current.mutateAsync({
+      listId: 'friends',
+      name: 'Best friends',
+      description: '',
+    });
+
+    await waitFor(() => {
+      expect(queryClient.getQueryData(['people-list', OWNER, 'friends'])).toMatchObject({
+        name: 'Best friends',
+        description: undefined,
+      });
+    });
+
+    resolvePublish?.();
+    await pending;
+  });
+
+  it('publishes a deletion request for the list coordinate and drops it from the cache', async () => {
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false },
+        mutations: { retry: false },
+      },
+    });
+    queryClient.setQueryData(['people-list', OWNER, 'friends'], cachedList());
+    queryClient.setQueryData(['people-lists', OWNER], [cachedList(), cachedList({ id: 'makers' })]);
+
+    const { useDeletePeopleList } = await import('./usePeopleListMutations');
+    const { result } = renderHook(() => useDeletePeopleList(), { wrapper: createWrapper(queryClient) });
+
+    await result.current.mutateAsync({ listId: 'friends' });
+
+    expect(mockPublishAsync).toHaveBeenCalledWith({
+      kind: 5,
+      content: 'People list deleted by owner',
+      tags: [
+        ['a', `30000:${OWNER}:friends`],
+        ['k', '30000'],
+      ],
+    });
+    expect(queryClient.getQueryData(['people-list', OWNER, 'friends'])).toBeNull();
+    expect(queryClient.getQueryData<PeopleList[]>(['people-lists', OWNER])?.map((list) => list.id)).toEqual([
+      'makers',
+    ]);
+  });
+
+  it('refuses to delete a people list when logged out', async () => {
+    mockUseCurrentUser.mockReturnValue({ user: undefined, signer: undefined });
+
+    const { useDeletePeopleList } = await import('./usePeopleListMutations');
+    const { result } = renderHook(() => useDeletePeopleList(), { wrapper: createWrapper() });
+
+    await expect(result.current.mutateAsync({ listId: 'friends' })).rejects.toThrow(
+      'Must be logged in to delete people lists',
+    );
+    expect(mockPublishAsync).not.toHaveBeenCalled();
   });
 });
