@@ -107,9 +107,9 @@ describe('usePeopleListVideos', () => {
     await result.current.fetchNextPage();
     await waitFor(() => expect(mockNostrQuery).toHaveBeenCalledTimes(2));
 
-    // Cursor derives from the oldest raw event, not the deduped page size.
+    // Cursor derives from the oldest raw event, not the deduped page size, and stays inclusive.
     const secondFilters = mockNostrQuery.mock.calls[1][0];
-    expect(secondFilters[0].until).toBe(999);
+    expect(secondFilters[0].until).toBe(1000);
   });
 
   it('continues from the oldest retained video when raw results exceed the page cap', async () => {
@@ -129,7 +129,66 @@ describe('usePeopleListVideos', () => {
     await waitFor(() => expect(mockNostrQuery).toHaveBeenCalledTimes(2));
 
     const secondFilters = mockNostrQuery.mock.calls[1][0];
-    expect(secondFilters[0].until).toBe(940);
+    expect(secondFilters[0].until).toBe(941);
+  });
+
+  it('keeps same-timestamp boundary videos reachable across pages', async () => {
+    const firstPage = [
+      ...Array.from({ length: 59 }, (_, index) => (
+        videoEvent(ALICE, `first-${index}`, 1000 - index)
+      )),
+      videoEvent(ALICE, 'boundary-a', 941),
+    ];
+    const secondPage = [
+      videoEvent(ALICE, 'boundary-a', 941),
+      videoEvent(ALICE, 'boundary-b', 941),
+    ];
+    mockNostrQuery.mockResolvedValueOnce(firstPage).mockResolvedValueOnce(secondPage);
+    const { usePeopleListVideos } = await import('./usePeopleListVideos');
+
+    const { result } = renderHook(() => usePeopleListVideos([ALICE]), { wrapper: createWrapper() });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    await result.current.fetchNextPage();
+    await waitFor(() => expect(mockNostrQuery).toHaveBeenCalledTimes(2));
+
+    const secondFilters = mockNostrQuery.mock.calls[1][0];
+    expect(secondFilters[0].until).toBe(941);
+    const videos = result.current.data?.pages.flatMap((page) => page.videos) ?? [];
+    expect(videos.map((video) => video.vineId)).toContain('boundary-a');
+    expect(videos.map((video) => video.vineId)).toContain('boundary-b');
+  });
+
+  it('steps past an inclusive boundary page that adds no new videos', async () => {
+    const firstPage = Array.from({ length: 60 }, (_, index) => (
+      videoEvent(ALICE, `video-${index}`, 1000 - index)
+    ));
+    const duplicateBoundary = Array.from({ length: 60 }, (_, index) => (
+      videoEvent(ALICE, `video-${index}`, 941)
+    ));
+    mockNostrQuery
+      .mockResolvedValueOnce(firstPage)
+      .mockResolvedValueOnce(duplicateBoundary)
+      .mockResolvedValueOnce([]);
+    const { usePeopleListVideos } = await import('./usePeopleListVideos');
+
+    const { result } = renderHook(() => usePeopleListVideos([ALICE]), { wrapper: createWrapper() });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    expect(result.current.hasNextPage).toBe(true);
+
+    await result.current.fetchNextPage();
+    await waitFor(() => expect(mockNostrQuery).toHaveBeenCalledTimes(2));
+
+    expect(result.current.hasNextPage).toBe(true);
+    const videos = result.current.data?.pages.flatMap((page) => page.videos) ?? [];
+    expect(videos).toHaveLength(60);
+
+    await result.current.fetchNextPage();
+    await waitFor(() => expect(mockNostrQuery).toHaveBeenCalledTimes(3));
+
+    const thirdFilters = mockNostrQuery.mock.calls[2][0];
+    expect(thirdFilters[0].until).toBe(940);
   });
 
   it('stops paginating when the raw page comes back below the limit', async () => {
