@@ -15,6 +15,7 @@ import { debugLog } from '@/lib/debug';
 import { transformToVideoPage } from '@/lib/funnelcakeTransform';
 import { isAbortError, reportFunnelcakeFallback } from '@/lib/funnelcakeFallbackReporting';
 import { isUrlLikeQuery } from '@/lib/searchUtils';
+import { FEED_PAGE_SIZE } from '@/config/feed';
 import {
   nextSortedOffset,
   RAW_FEED_BACKFILL_ATTEMPTS,
@@ -199,7 +200,7 @@ export function useInfiniteSearchVideos({
   query,
   searchType = 'auto',
   sortMode = 'relevance',
-  pageSize = 12,
+  pageSize = FEED_PAGE_SIZE,
 }: UseInfiniteSearchVideosOptions) {
   const { nostr } = useNostr();
   const apiUrl = API_CONFIG.funnelcake.baseUrl;

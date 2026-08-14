@@ -9,7 +9,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { VideoCard } from '@/components/VideoCard';
-import { useVideoNavigation, type VideoNavigationContext } from '@/hooks/useVideoNavigation';
+import { buildVideoNavigationUrl, parseVideoNavigationContext, useVideoNavigation, type VideoNavigationContext } from '@/hooks/useVideoNavigation';
 import { useVideoByIdFunnelcake } from '@/hooks/useVideoByIdFunnelcake';
 import { useAuthor } from '@/hooks/useAuthor';
 import { useBatchedVideoInteractions } from '@/hooks/useBatchedVideoInteractions';
@@ -31,24 +31,14 @@ import type { ParsedVideoData, UserInteractions } from '@/types/video';
 
 export function VideoPage() {
   const { t } = useTranslation();
+  const { toast } = useToast();
   const { id } = useParams<{ id: string }>();
   const [searchParams] = useSearchParams();
   const navigate = useSubdomainNavigate();
 
   // Parse navigation context from URL params
   const context: VideoNavigationContext | null = useMemo(() => {
-    const source = searchParams.get('source') as VideoNavigationContext['source'];
-    if (!source) return null;
-
-    return {
-      source,
-      hashtag: searchParams.get('hashtag') || undefined,
-      pubkey: searchParams.get('pubkey') || undefined,
-      listId: searchParams.get('listId') || undefined,
-      query: searchParams.get('q') || undefined,
-      sortMode: searchParams.get('sort') as VideoNavigationContext['sortMode'],
-      currentIndex: searchParams.get('index') ? parseInt(searchParams.get('index')!) : undefined,
-    };
+    return parseVideoNavigationContext(searchParams);
   }, [searchParams]);
   const profileContextPubkey = context?.source === 'profile' ? context.pubkey : undefined;
 
@@ -57,6 +47,9 @@ export function VideoPage() {
     video: funnelcakeVideo,
     videos: funnelcakeVideos,
     windowOffset: funnelcakeWindowOffset,
+    hasNextPage: funnelcakeHasNextPage,
+    isFetchingNextPage: isFetchingNextFunnelcakePage,
+    fetchNextPage: fetchNextFunnelcakePage,
     isLoading: funnelcakeLoading,
     error: funnelcakeError,
   } = useVideoByIdFunnelcake({
@@ -64,12 +57,16 @@ export function VideoPage() {
     pubkey: profileContextPubkey,
     hashtag: context?.source === 'hashtag' ? context.hashtag : undefined,
     query: context?.source === 'search' ? context.query : undefined,
+    featuredTabId: context?.source === 'featured' ? context.featuredTabId : undefined,
     sortMode: context?.sortMode,
     currentIndex: context?.currentIndex,
     enabled: !!id,
   });
 
-  const shouldEnableWebsocketNavigation = !!id && !funnelcakeLoading && !funnelcakeVideo;
+  const shouldEnableWebsocketNavigation = !!id && !funnelcakeLoading && (
+    !funnelcakeVideo ||
+    (context?.source === 'featured' && !funnelcakeVideos)
+  );
 
   // Fallback to WebSocket-based navigation (slower but handles all cases)
   const {
@@ -97,32 +94,60 @@ export function VideoPage() {
   }, [videos, id]);
   const navigationIndexBase = videos === funnelcakeVideos ? funnelcakeWindowOffset : 0;
 
-  const hasNext = currentIndex >= 0 && currentIndex < (videos?.length || 0) - 1;
+  const isUsingFunnelcakeVideos = videos === funnelcakeVideos;
+  const hasNextLoaded = currentIndex >= 0 && currentIndex < (videos?.length || 0) - 1;
+  const hasNext = hasNextLoaded || (isUsingFunnelcakeVideos && currentIndex >= 0 && funnelcakeHasNextPage);
   const hasPrevious = currentIndex > 0;
+  const nextNavigationInFlightRef = useRef(false);
 
   // Build navigation URL
   const buildNavigationUrl = useCallback((video: ParsedVideoData, index: number) => {
     if (!context) return `/video/${video.id}`;
 
-    const params = new URLSearchParams({
-      source: context.source,
-      index: index.toString(),
-    });
-
-    if (context.hashtag) params.set('hashtag', context.hashtag);
-    if (context.pubkey) params.set('pubkey', context.pubkey);
-    if (context.listId) params.set('listId', context.listId);
-    if (context.query) params.set('q', context.query);
-    if (context.sortMode) params.set('sort', context.sortMode);
-
-    return `/video/${video.id}?${params.toString()}`;
+    return buildVideoNavigationUrl(video.id, context, index);
   }, [context]);
 
-  const goToNext = useCallback(() => {
-    if (!hasNext || !videos) return;
-    const nextVideo = videos[currentIndex + 1];
+  const goToNext = useCallback(async () => {
+    if (!hasNext || !videos || nextNavigationInFlightRef.current || isFetchingNextFunnelcakePage) return;
+    let nextVideos = videos;
+
+    if (!hasNextLoaded && isUsingFunnelcakeVideos && funnelcakeHasNextPage) {
+      nextNavigationInFlightRef.current = true;
+      try {
+        nextVideos = await fetchNextFunnelcakePage() ?? videos;
+      } catch {
+        nextVideos = videos;
+      } finally {
+        nextNavigationInFlightRef.current = false;
+      }
+    }
+
+    const nextVideo = nextVideos[currentIndex + 1];
+    if (!nextVideo) {
+      toast({
+        title: t('videoPage.errorTitle'),
+        description: t('videoPage.nextVideoUnavailableDescription'),
+        variant: 'destructive',
+      });
+      return;
+    }
+
     navigate(buildNavigationUrl(nextVideo, navigationIndexBase + currentIndex + 1));
-  }, [hasNext, videos, currentIndex, navigate, buildNavigationUrl, navigationIndexBase]);
+  }, [
+    hasNext,
+    videos,
+    hasNextLoaded,
+    isUsingFunnelcakeVideos,
+    funnelcakeHasNextPage,
+    fetchNextFunnelcakePage,
+    isFetchingNextFunnelcakePage,
+    currentIndex,
+    navigate,
+    buildNavigationUrl,
+    navigationIndexBase,
+    toast,
+    t,
+  ]);
 
   const goToPrevious = useCallback(() => {
     if (!hasPrevious || !videos) return;
@@ -220,7 +245,6 @@ export function VideoPage() {
     videosForInteractions,
     user?.pubkey
   );
-  const { toast } = useToast();
   const queryClient = useQueryClient();
   const { mutateAsync: publishEvent } = useNostrPublish();
   const { mutateAsync: repostVideo, isPending: isReposting } = useRepostVideo();

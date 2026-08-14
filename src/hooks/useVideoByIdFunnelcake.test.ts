@@ -1,11 +1,34 @@
 import React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { renderHook, waitFor } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 const mockFetchUserVideos = vi.fn();
 const mockSearchVideos = vi.fn();
 const mockFetchVideoById = vi.fn();
+const mockFetchFeaturedTabVideos = vi.fn();
+const mockBlocklist = new Set<string>();
+const mockTransformToVideoPage = vi.fn((response: {
+  videos: Array<{ id: string; pubkey: string; d_tag?: string }>;
+  has_more?: boolean;
+  next_cursor?: string;
+}) => ({
+  videos: response.videos.map((video) => ({
+    id: video.id,
+    pubkey: video.pubkey,
+    kind: 34236,
+    createdAt: 1,
+    content: '',
+    videoUrl: 'https://example.com/video.mp4',
+    hashtags: [],
+    vineId: video.d_tag || video.id,
+    reposts: [],
+  })),
+  nextCursor: undefined,
+  rawCursor: response.next_cursor,
+  hasMore: Boolean(response.has_more),
+}));
+const mockUseFeaturedTab = vi.fn();
 const mockTransformFunnelcakeVideo = vi.fn((video: { id: string; pubkey: string; d_tag?: string }) => ({
   id: video.id,
   pubkey: video.pubkey,
@@ -35,8 +58,21 @@ vi.mock('@/lib/funnelcakeClient', () => ({
   fetchVideoById: mockFetchVideoById,
 }));
 
+vi.mock('@/lib/featuredTabsClient', () => ({
+  fetchFeaturedTabVideos: mockFetchFeaturedTabVideos,
+}));
+
 vi.mock('@/lib/funnelcakeTransform', () => ({
   transformFunnelcakeVideo: mockTransformFunnelcakeVideo,
+  transformToVideoPage: mockTransformToVideoPage,
+}));
+
+vi.mock('@/hooks/useFeaturedTab', () => ({
+  useFeaturedTab: mockUseFeaturedTab,
+}));
+
+vi.mock('@/hooks/useFeedBlocklist', () => ({
+  useFeedBlocklist: () => mockBlocklist,
 }));
 
 vi.mock('@/lib/debug', () => ({
@@ -63,6 +99,11 @@ describe('useVideoByIdFunnelcake', () => {
   beforeEach(async () => {
     vi.resetModules();
     vi.clearAllMocks();
+    mockBlocklist.clear();
+    mockUseFeaturedTab.mockReturnValue({
+      tab: null,
+      isResolved: true,
+    });
 
     ({ useVideoByIdFunnelcake } = await import('./useVideoByIdFunnelcake'));
   });
@@ -215,5 +256,220 @@ describe('useVideoByIdFunnelcake', () => {
       expect.any(AbortSignal)
     );
     expect(result.current.videos?.map(video => video.id)).toEqual(['neighbor-1', 'target-video']);
+  });
+
+  it('uses eligible featured tab videos for navigation in server order', async () => {
+    mockUseFeaturedTab.mockReturnValue({
+      tab: { id: 'ft_1234abcd' },
+      isResolved: true,
+    });
+    mockFetchFeaturedTabVideos.mockResolvedValueOnce({
+      videos: [
+        { id: 'featured-1', pubkey: 'p'.repeat(64), d_tag: 'featured-1' },
+        { id: 'target-video', pubkey: 'p'.repeat(64), d_tag: 'target-video' },
+        { id: 'featured-3', pubkey: 'p'.repeat(64), d_tag: 'featured-3' },
+      ],
+      has_more: true,
+      next_cursor: 'cursor-2',
+    });
+
+    const { result } = renderHook(
+      () => useVideoByIdFunnelcake({
+        videoId: 'target-video',
+        featuredTabId: 'ft_1234abcd',
+        currentIndex: 1,
+      }),
+      { wrapper: createWrapper() }
+    );
+
+    await waitFor(() => {
+      expect(result.current.video?.id).toBe('target-video');
+    });
+
+    expect(mockFetchFeaturedTabVideos).toHaveBeenCalledWith(
+      'https://api.divine.video',
+      'ft_1234abcd',
+      undefined,
+      12,
+      expect.any(AbortSignal)
+    );
+    expect(result.current.videos?.map(video => video.id)).toEqual([
+      'featured-1',
+      'target-video',
+      'featured-3',
+    ]);
+    expect(result.current.windowOffset).toBe(0);
+  });
+
+  it('filters blocked authors out of featured navigation candidates', async () => {
+    const blockedPubkey = 'b'.repeat(64);
+    mockBlocklist.add(blockedPubkey);
+    mockUseFeaturedTab.mockReturnValue({
+      tab: { id: 'ft_1234abcd' },
+      isResolved: true,
+    });
+    mockFetchFeaturedTabVideos.mockResolvedValueOnce({
+      videos: [
+        { id: 'target-video', pubkey: 'p'.repeat(64), d_tag: 'target-video' },
+        { id: 'blocked-video', pubkey: blockedPubkey, d_tag: 'blocked-video' },
+        { id: 'visible-video', pubkey: 'v'.repeat(64), d_tag: 'visible-video' },
+      ],
+      has_more: false,
+    });
+
+    const { result } = renderHook(
+      () => useVideoByIdFunnelcake({
+        videoId: 'target-video',
+        featuredTabId: 'ft_1234abcd',
+        currentIndex: 0,
+      }),
+      { wrapper: createWrapper() }
+    );
+
+    await waitFor(() => {
+      expect(result.current.videos?.map(video => video.id)).toEqual(['target-video', 'visible-video']);
+    });
+  });
+
+  it('walks featured cursor pages up to the index-derived budget for cold links', async () => {
+    mockUseFeaturedTab.mockReturnValue({
+      tab: { id: 'ft_1234abcd' },
+      isResolved: true,
+    });
+    mockFetchFeaturedTabVideos
+      .mockResolvedValueOnce({
+        videos: [{ id: 'featured-1', pubkey: 'p'.repeat(64), d_tag: 'featured-1' }],
+        has_more: true,
+        next_cursor: 'cursor-2',
+      })
+      .mockResolvedValueOnce({
+        videos: [{ id: 'target-video', pubkey: 'p'.repeat(64), d_tag: 'target-video' }],
+        has_more: false,
+        next_cursor: undefined,
+      });
+
+    const { result } = renderHook(
+      () => useVideoByIdFunnelcake({
+        videoId: 'target-video',
+        featuredTabId: 'ft_1234abcd',
+        currentIndex: 12,
+      }),
+      { wrapper: createWrapper() }
+    );
+
+    await waitFor(() => {
+      expect(result.current.videos?.map(video => video.id)).toEqual(['featured-1', 'target-video']);
+    });
+
+    expect(mockFetchFeaturedTabVideos).toHaveBeenNthCalledWith(
+      2,
+      'https://api.divine.video',
+      'ft_1234abcd',
+      'cursor-2',
+      12,
+      expect.any(AbortSignal)
+    );
+  });
+
+  it('does not fetch featured neighbors when the URL tab is not currently eligible', async () => {
+    mockUseFeaturedTab.mockReturnValue({
+      tab: { id: 'ft_other' },
+      isResolved: true,
+    });
+    mockFetchVideoById.mockResolvedValueOnce({
+      id: 'target-video',
+      pubkey: 'p'.repeat(64),
+      d_tag: 'target-video',
+    });
+
+    const { result } = renderHook(
+      () => useVideoByIdFunnelcake({
+        videoId: 'target-video',
+        featuredTabId: 'ft_1234abcd',
+        currentIndex: 1,
+      }),
+      { wrapper: createWrapper() }
+    );
+
+    await waitFor(() => {
+      expect(result.current.video?.id).toBe('target-video');
+    });
+
+    expect(mockFetchFeaturedTabVideos).not.toHaveBeenCalled();
+    expect(mockSearchVideos).not.toHaveBeenCalled();
+    expect(mockFetchUserVideos).not.toHaveBeenCalled();
+    expect(result.current.videos).toBeNull();
+  });
+
+  it('skips a fully-blocked featured page when paging for the next neighbor', async () => {
+    const blockedPubkey = 'b'.repeat(64);
+    mockBlocklist.add(blockedPubkey);
+    mockUseFeaturedTab.mockReturnValue({
+      tab: { id: 'ft_1234abcd' },
+      isResolved: true,
+    });
+    // Page 2 is entirely blocked authors; the visible neighbor is on page 3.
+    // A single-page fetch would filter to nothing and dead-end the boundary.
+    mockFetchFeaturedTabVideos.mockImplementation((_apiUrl, _configId, cursor) => {
+      if (!cursor) {
+        return Promise.resolve({
+          videos: [{ id: 'target-video', pubkey: 'p'.repeat(64), d_tag: 'target-video' }],
+          has_more: true,
+          next_cursor: 'cursor-2',
+        });
+      }
+      if (cursor === 'cursor-2') {
+        return Promise.resolve({
+          videos: [
+            { id: 'blocked-a', pubkey: blockedPubkey, d_tag: 'blocked-a' },
+            { id: 'blocked-b', pubkey: blockedPubkey, d_tag: 'blocked-b' },
+          ],
+          has_more: true,
+          next_cursor: 'cursor-3',
+        });
+      }
+      if (cursor === 'cursor-3') {
+        return Promise.resolve({
+          videos: [{ id: 'visible-next', pubkey: 'v'.repeat(64), d_tag: 'visible-next' }],
+          has_more: false,
+        });
+      }
+      return Promise.resolve({ videos: [], has_more: false });
+    });
+
+    const { result } = renderHook(
+      () => useVideoByIdFunnelcake({
+        videoId: 'target-video',
+        featuredTabId: 'ft_1234abcd',
+      }),
+      { wrapper: createWrapper() }
+    );
+
+    await waitFor(() => {
+      expect(result.current.videos?.map(video => video.id)).toEqual(['target-video']);
+    });
+
+    let pagedIds: string[] | undefined;
+    await act(async () => {
+      const paged = await result.current.fetchNextPage();
+      pagedIds = paged?.map(video => video.id);
+    });
+
+    // The all-blocked page is walked past, not surfaced as a dead-end.
+    expect(pagedIds).toEqual(['target-video', 'visible-next']);
+    expect(mockFetchFeaturedTabVideos).toHaveBeenCalledWith(
+      'https://api.divine.video',
+      'ft_1234abcd',
+      'cursor-2',
+      12,
+      expect.any(AbortSignal)
+    );
+    expect(mockFetchFeaturedTabVideos).toHaveBeenCalledWith(
+      'https://api.divine.video',
+      'ft_1234abcd',
+      'cursor-3',
+      12,
+      expect.any(AbortSignal)
+    );
   });
 });
