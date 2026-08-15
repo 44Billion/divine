@@ -1,3 +1,4 @@
+import { useCallback } from 'react';
 import { Outlet, useLocation, useSearchParams } from 'react-router-dom';
 import { AppHeader } from '@/components/AppHeader';
 import { BottomNav } from '@/components/BottomNav';
@@ -26,28 +27,34 @@ export function AppLayout() {
   // Hide header/sidebar on landing page (when logged out on root path), but NOT on subdomain profiles
   const isLandingPage = location.pathname === '/' && !isLoggedIn && !getSubdomainUser();
 
-  const handleCloseFullscreen = () => {
+  const handleCloseFullscreen = useCallback(() => {
     exitFullscreen();
 
-    if (!compilationRequest.play) {
+    const currentRequest = parseCompilationPlaybackParams(searchParams);
+    if (!currentRequest.play) {
       return;
     }
 
     const nextParams = new URLSearchParams(searchParams);
     clearCompilationPlaybackParams(nextParams);
     setSearchParams(nextParams, { replace: true });
-  };
+  }, [exitFullscreen, searchParams, setSearchParams]);
 
-  const handleCompilationVideoChange = (videoId: string) => {
-    if (!compilationRequest.play) {
+  const handleCompilationVideoChange = useCallback((videoId: string) => {
+    const currentRequest = parseCompilationPlaybackParams(searchParams);
+    if (!currentRequest.play) {
       return;
     }
 
     const nextParams = new URLSearchParams(searchParams);
     nextParams.set('video', videoId);
     nextParams.delete('start');
+    if (nextParams.toString() === searchParams.toString()) {
+      return;
+    }
+
     setSearchParams(nextParams, { replace: true });
-  };
+  }, [searchParams, setSearchParams]);
 
   return (
     <>

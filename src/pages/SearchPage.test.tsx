@@ -1,7 +1,7 @@
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter, useLocation } from 'react-router-dom';
+import { BrowserRouter, MemoryRouter, useLocation } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type {
   ButtonHTMLAttributes,
@@ -12,6 +12,7 @@ import type {
 } from 'react';
 import { nip19 } from 'nostr-tools';
 import { initializeI18n } from '@/lib/i18n';
+import { trackSearch } from '@/lib/analytics';
 import SearchPage from './SearchPage';
 
 const {
@@ -185,16 +186,39 @@ vi.mock('@/lib/eventLookup', () => ({
   fetchEventById: mockFetchEventById,
 }));
 
-function renderPage(initialEntries: string[] = ['/search']) {
-  const queryClient = new QueryClient({
+function createTestQueryClient() {
+  return new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
+}
+
+function renderPage(initialEntries: string[] = ['/search']) {
+  const queryClient = createTestQueryClient();
   return render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={initialEntries}>
         <SearchPage />
         <LocationDisplay />
       </MemoryRouter>
+    </QueryClientProvider>
+  );
+}
+
+function renderPageInBrowser(path: string) {
+  window.history.pushState(null, '', path);
+  const queryClient = createTestQueryClient();
+  return render(
+    renderPageWithBrowserRouter(queryClient)
+  );
+}
+
+function renderPageWithBrowserRouter(queryClient = createTestQueryClient()) {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <BrowserRouter>
+        <SearchPage />
+        <LocationDisplay />
+      </BrowserRouter>
     </QueryClientProvider>
   );
 }
@@ -253,6 +277,7 @@ describe('SearchPage', () => {
 
   afterEach(() => {
     vi.useRealTimers();
+    window.history.pushState(null, '', '/');
   });
 
   it('clears the blur suggestion timeout on unmount', async () => {
@@ -541,6 +566,160 @@ describe('SearchPage', () => {
     expect(screen.getByTestId('location-display').textContent).toBe(
       '/search?q=twerking&filter=videos&play=compilation&video=video-1'
     );
+  });
+
+  it('does not rewrite the same search url when only result counts change', async () => {
+    vi.useFakeTimers();
+    const originalReplaceState = window.history.replaceState;
+    const replaceStateSpy = vi.fn(originalReplaceState.bind(window.history));
+    window.history.replaceState = replaceStateSpy;
+
+    try {
+      mockUseInfiniteSearchVideos.mockReturnValue({
+        data: { pages: [{ videos: [{ id: 'video-1', pubkey: 'a'.repeat(64) }] }] },
+        fetchNextPage: vi.fn(),
+        hasNextPage: false,
+        isLoading: false,
+        error: null,
+        fetchedCount: 1,
+      });
+
+      const { rerender } = renderPageInBrowser('/search?q=twerking&filter=videos');
+      replaceStateSpy.mockClear();
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(600);
+      });
+
+      expect(replaceStateSpy).not.toHaveBeenCalled();
+
+      mockUseInfiniteSearchVideos.mockReturnValue({
+        data: {
+          pages: [
+            { videos: [{ id: 'video-1', pubkey: 'a'.repeat(64) }] },
+            { videos: [{ id: 'video-2', pubkey: 'b'.repeat(64) }] },
+          ],
+        },
+        fetchNextPage: vi.fn(),
+        hasNextPage: false,
+        isLoading: false,
+        error: null,
+        fetchedCount: 2,
+      });
+
+      rerender(
+        renderPageWithBrowserRouter()
+      );
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(600);
+      });
+
+      expect(replaceStateSpy).not.toHaveBeenCalled();
+      expect(screen.getByTestId('location-display').textContent).toBe('/search?q=twerking&filter=videos');
+    } finally {
+      window.history.replaceState = originalReplaceState;
+    }
+  });
+
+  it('tracks a slow search once after results settle', async () => {
+    vi.useFakeTimers();
+    mockUseInfiniteSearchVideos.mockReturnValue({
+      data: { pages: [{ videos: [] }] },
+      fetchNextPage: vi.fn(),
+      hasNextPage: false,
+      isLoading: true,
+      error: null,
+      fetchedCount: 0,
+    });
+
+    const { rerender } = renderPage(['/search?q=twerking&filter=videos']);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(600);
+    });
+
+    expect(trackSearch).not.toHaveBeenCalled();
+
+    mockUseInfiniteSearchVideos.mockReturnValue({
+      data: {
+        pages: [
+          { videos: [{ id: 'video-1', pubkey: 'a'.repeat(64) }] },
+          { videos: [{ id: 'video-2', pubkey: 'b'.repeat(64) }] },
+        ],
+      },
+      fetchNextPage: vi.fn(),
+      hasNextPage: false,
+      isLoading: false,
+      error: null,
+      fetchedCount: 2,
+    });
+
+    rerender(
+      <QueryClientProvider client={createTestQueryClient()}>
+        <MemoryRouter initialEntries={['/search?q=twerking&filter=videos']}>
+          <SearchPage />
+          <LocationDisplay />
+        </MemoryRouter>
+      </QueryClientProvider>
+    );
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(600);
+    });
+
+    expect(trackSearch).toHaveBeenCalledTimes(1);
+    expect(trackSearch).toHaveBeenLastCalledWith('twerking', 'videos', 2);
+  });
+
+  it('does not retrack a settled search when result counts change', async () => {
+    vi.useFakeTimers();
+    mockUseInfiniteSearchVideos.mockReturnValue({
+      data: { pages: [{ videos: [{ id: 'video-1', pubkey: 'a'.repeat(64) }] }] },
+      fetchNextPage: vi.fn(),
+      hasNextPage: false,
+      isLoading: false,
+      error: null,
+      fetchedCount: 1,
+    });
+
+    const { rerender } = renderPage(['/search?q=twerking&filter=videos']);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(600);
+    });
+
+    expect(trackSearch).toHaveBeenCalledTimes(1);
+    expect(trackSearch).toHaveBeenLastCalledWith('twerking', 'videos', 1);
+
+    mockUseInfiniteSearchVideos.mockReturnValue({
+      data: {
+        pages: [
+          { videos: [{ id: 'video-1', pubkey: 'a'.repeat(64) }] },
+          { videos: [{ id: 'video-2', pubkey: 'b'.repeat(64) }] },
+        ],
+      },
+      fetchNextPage: vi.fn(),
+      hasNextPage: false,
+      isLoading: false,
+      error: null,
+      fetchedCount: 2,
+    });
+
+    rerender(
+      <QueryClientProvider client={createTestQueryClient()}>
+        <MemoryRouter initialEntries={['/search?q=twerking&filter=videos']}>
+          <SearchPage />
+          <LocationDisplay />
+        </MemoryRouter>
+      </QueryClientProvider>
+    );
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(600);
+    });
+
+    expect(trackSearch).toHaveBeenCalledTimes(1);
   });
 
   // Regression: bare VideoCard hides view counts because it has no metrics

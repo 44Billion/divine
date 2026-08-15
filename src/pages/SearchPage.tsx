@@ -142,10 +142,11 @@ export function SearchPage() {
     description: 'Search for videos, users, and hashtags on Divine Web',
   });
 
-  // Debounced URL update - only update URL after user stops typing for 300ms
+  // Debounced URL update - only update URL after user stops typing for 500ms
   // This prevents analytics from firing on every keystroke
-  const debouncedSearchQuery = useRef(searchQuery);
-  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const analyticsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastTrackedSearchRef = useRef<string | null>(null);
 
   useEffect(() => {
     // Clear any existing timer
@@ -153,9 +154,8 @@ export function SearchPage() {
       clearTimeout(debounceTimerRef.current);
     }
 
-    // Set new timer to update URL after 300ms of no typing
+    // Set new timer to update URL after 500ms of no typing
     debounceTimerRef.current = setTimeout(() => {
-      debouncedSearchQuery.current = searchQuery;
       const params = new URLSearchParams();
       if (searchQuery) params.set('q', searchQuery);
       if (sortMode !== 'hot') params.set('sort', sortMode);
@@ -168,12 +168,9 @@ export function SearchPage() {
           params.set('start', String(compilationRequest.start));
         }
       }
-      setSearchParams(params, { replace: true });
 
-      // Track search analytics when user stops typing
-      if (searchQuery.trim()) {
-        const totalResults = videoResults.length + userResults.length + hashtagResults.length;
-        trackSearch(searchQuery, activeFilter, totalResults);
+      if (params.toString() !== searchParams.toString()) {
+        setSearchParams(params, { replace: true });
       }
     }, 500);
 
@@ -187,10 +184,50 @@ export function SearchPage() {
     compilationRequest.play,
     compilationRequest.start,
     compilationRequest.videoId,
-    hashtagResults.length,
+    searchParams,
     searchQuery,
     setSearchParams,
     sortMode,
+  ]);
+
+  useEffect(() => {
+    if (analyticsTimerRef.current) {
+      clearTimeout(analyticsTimerRef.current);
+    }
+
+    const trimmedQuery = searchQuery.trim();
+    if (!trimmedQuery) {
+      lastTrackedSearchRef.current = null;
+      return;
+    }
+
+    if (isLoadingVideos || isLoadingUsers || isLoadingHashtags) {
+      return;
+    }
+
+    const trackingKey = JSON.stringify([trimmedQuery, activeFilter]);
+    if (lastTrackedSearchRef.current === trackingKey) {
+      return;
+    }
+
+    analyticsTimerRef.current = setTimeout(() => {
+      const totalResults = videoResults.length + userResults.length + hashtagResults.length;
+      trackSearch(searchQuery, activeFilter, totalResults);
+      lastTrackedSearchRef.current = trackingKey;
+    }, 500);
+
+    return () => {
+      if (analyticsTimerRef.current) {
+        clearTimeout(analyticsTimerRef.current);
+      }
+    };
+  }, [
+    activeFilter,
+    hashtagResults.length,
+    isLoadingHashtags,
+    isLoadingUsers,
+    isLoadingVideos,
+    searchQuery,
     userResults.length,
     videoResults.length,
   ]);
