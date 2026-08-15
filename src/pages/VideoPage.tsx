@@ -29,6 +29,11 @@ import { reportFunnelcakeFallback } from '@/lib/funnelcakeFallbackReporting';
 import { buildVideoLikeTags } from '@/lib/buildVideoLikeTags';
 import type { ParsedVideoData, UserInteractions } from '@/types/video';
 
+function getNavigationIndex(video: ParsedVideoData, fallbackIndex: number): number {
+  const navigationIndex = (video as ParsedVideoData & { navigationIndex?: unknown }).navigationIndex;
+  return typeof navigationIndex === 'number' ? navigationIndex : fallbackIndex;
+}
+
 export function VideoPage() {
   const { t } = useTranslation();
   const { toast } = useToast();
@@ -47,6 +52,7 @@ export function VideoPage() {
     video: funnelcakeVideo,
     videos: funnelcakeVideos,
     windowOffset: funnelcakeWindowOffset,
+    fetchedCount: funnelcakeFetchedCount,
     hasNextPage: funnelcakeHasNextPage,
     isFetchingNextPage: isFetchingNextFunnelcakePage,
     fetchNextPage: fetchNextFunnelcakePage,
@@ -108,10 +114,15 @@ export function VideoPage() {
   }, [context]);
 
   const goToNext = useCallback(async () => {
-    if (!hasNext || !videos || nextNavigationInFlightRef.current || isFetchingNextFunnelcakePage) return;
+    if (!hasNext || !videos || nextNavigationInFlightRef.current) return;
     let nextVideos = videos;
 
     if (!hasNextLoaded && isUsingFunnelcakeVideos && funnelcakeHasNextPage) {
+      // The next video isn't loaded yet. If a scroll-triggered fetch is already
+      // loading it, let that finish rather than starting a second fetch. When the
+      // next video is already loaded we fall through and navigate immediately,
+      // even while a background page fetch is in flight.
+      if (isFetchingNextFunnelcakePage) return;
       nextNavigationInFlightRef.current = true;
       try {
         nextVideos = await fetchNextFunnelcakePage() ?? videos;
@@ -132,7 +143,7 @@ export function VideoPage() {
       return;
     }
 
-    navigate(buildNavigationUrl(nextVideo, navigationIndexBase + currentIndex + 1));
+    navigate(buildNavigationUrl(nextVideo, getNavigationIndex(nextVideo, navigationIndexBase + currentIndex + 1)));
   }, [
     hasNext,
     videos,
@@ -152,7 +163,7 @@ export function VideoPage() {
   const goToPrevious = useCallback(() => {
     if (!hasPrevious || !videos) return;
     const prevVideo = videos[currentIndex - 1];
-    navigate(buildNavigationUrl(prevVideo, navigationIndexBase + currentIndex - 1));
+    navigate(buildNavigationUrl(prevVideo, getNavigationIndex(prevVideo, navigationIndexBase + currentIndex - 1)));
   }, [hasPrevious, videos, currentIndex, navigate, buildNavigationUrl, navigationIndexBase]);
 
   // Get author data for profile context
@@ -183,10 +194,40 @@ export function VideoPage() {
   }, [videos, maxRendered]);
 
   const hasMoreToShow = maxRendered < (videos?.length || 0);
+  const hasMoreFeedVideos = hasMoreToShow || (isUsingFunnelcakeVideos && funnelcakeHasNextPage);
+  // InfiniteScroll only calls next when dataLength grows. The unfiltered fetched
+  // count keeps it moving after a fully filtered page; visibleVideos controls UI.
+  const scrollDataLength = isUsingFunnelcakeVideos
+    ? funnelcakeFetchedCount + visibleVideos.length
+    : visibleVideos.length;
 
-  const showMoreVideos = useCallback(() => {
-    setMaxRendered(prev => Math.min(prev + LOAD_MORE_COUNT, videos?.length || 0));
-  }, [videos?.length]);
+  const showMoreVideos = useCallback(async () => {
+    if (hasMoreToShow) {
+      setMaxRendered(prev => Math.min(prev + LOAD_MORE_COUNT, videos?.length || 0));
+      return;
+    }
+
+    if (isUsingFunnelcakeVideos && funnelcakeHasNextPage && !isFetchingNextFunnelcakePage) {
+      try {
+        await fetchNextFunnelcakePage();
+      } catch {
+        toast({
+          title: t('videoPage.errorTitle'),
+          description: t('videoPage.loadMoreUnavailableDescription'),
+          variant: 'destructive',
+        });
+      }
+    }
+  }, [
+    fetchNextFunnelcakePage,
+    funnelcakeHasNextPage,
+    hasMoreToShow,
+    isFetchingNextFunnelcakePage,
+    isUsingFunnelcakeVideos,
+    toast,
+    t,
+    videos?.length,
+  ]);
 
   const fallbackReportKeyRef = useRef<string | null>(null);
 
@@ -723,9 +764,9 @@ export function VideoPage() {
 
         {/* Scrollable video feed - progressive rendering */}
         <InfiniteScroll
-          dataLength={visibleVideos.length}
+          dataLength={scrollDataLength}
           next={showMoreVideos}
-          hasMore={hasMoreToShow}
+          hasMore={hasMoreFeedVideos}
           loader={
             <div className="h-16 flex items-center justify-center">
               <div className="flex items-center gap-3">
@@ -733,6 +774,13 @@ export function VideoPage() {
                 <span className="text-sm text-muted-foreground">{t('videoPage.loadingMore')}</span>
               </div>
             </div>
+          }
+          endMessage={
+            (videos?.length ?? 0) > 10 ? (
+              <p className="py-6 text-center text-sm text-muted-foreground">
+                {t('videoPage.allCaughtUp')}
+              </p>
+            ) : null
           }
           className="space-y-6 max-w-xl mx-auto"
         >

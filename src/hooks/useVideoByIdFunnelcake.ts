@@ -2,10 +2,10 @@
 // ABOUTME: Provides fast video lookup for VideoPage with profile and hashtag context support
 
 import { useEffect, useMemo } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { getFunnelcakeBaseUrl } from '@/config/api';
 import { fetchVideoById, fetchUserVideos, searchVideos } from '@/lib/funnelcakeClient';
-import { transformFunnelcakeVideo } from '@/lib/funnelcakeTransform';
+import { transformFunnelcakeVideo, transformToVideoPage } from '@/lib/funnelcakeTransform';
 import { getFunnelcakeUrl } from '@/config/relays';
 import { useAppContext } from '@/hooks/useAppContext';
 import { useFeaturedTab } from '@/hooks/useFeaturedTab';
@@ -14,8 +14,8 @@ import { useFeedBlocklist } from '@/hooks/useFeedBlocklist';
 import { FEED_PAGE_SIZE } from '@/config/feed';
 import { filterBlockedVideoPages } from '@/lib/blocklistFilter';
 import { debugLog } from '@/lib/debug';
+import { videoAddress } from '@/lib/videoAddress';
 import type { ParsedVideoData } from '@/types/video';
-import type { FunnelcakeVideoRaw } from '@/types/funnelcake';
 import type { SortMode } from '@/types/nostr';
 
 interface UseVideoByIdOptions {
@@ -33,6 +33,7 @@ interface UseVideoByIdResult {
   video: ParsedVideoData | null;
   videos: ParsedVideoData[] | null;  // Neighboring videos for navigation
   windowOffset: number;
+  fetchedCount: number;
   hasNextPage: boolean;
   isFetchingNextPage: boolean;
   fetchNextPage: () => Promise<ParsedVideoData[] | null>;
@@ -41,16 +42,36 @@ interface UseVideoByIdResult {
 }
 
 const NAVIGATION_WINDOW_SIZE = 16;
-// Cold featured links must page forward by cursor to rebuild enough filtered
-// server-order context, but the detail page should not drain an unbounded tab.
-const FEATURED_NAVIGATION_PAGE_BUDGET = 5;
+const NAVIGATION_PAGE_BUDGET = 5;
 
-/** Drop rows the transform refuses — a video with no `d` tag has no coordinate. */
-function transformNavigationVideos(rawVideos: FunnelcakeVideoRaw[]): ParsedVideoData[] {
-  return rawVideos.flatMap(raw => {
-    const video = transformFunnelcakeVideo(raw);
-    return video ? [video] : [];
-  });
+type NavigationVideo = ParsedVideoData & { navigationIndex?: number };
+
+interface VideoNavigationPage {
+  videos: NavigationVideo[];
+  offset?: number;
+}
+
+/**
+ * Flatten infinite-query pages into one navigation list, dropping any row that
+ * repeats across the page boundary. Offset pagination can shift a video onto two
+ * consecutive pages when a publish/delete lands between fetches, so a plain
+ * flatMap yields duplicate cards (and duplicate React keys). Keyed by the
+ * addressable coordinate (pubkey:kind:d-tag), matching the per-response dedup in
+ * transformFunnelcakeResponse.
+ */
+function flattenUniqueVideos(pages?: VideoNavigationPage[]): ParsedVideoData[] | null {
+  if (!pages) return null;
+  const seen = new Set<string>();
+  const videos: ParsedVideoData[] = [];
+  for (const page of pages) {
+    for (const video of page.videos) {
+      const key = videoAddress(video);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      videos.push(video);
+    }
+  }
+  return videos;
 }
 
 function getNavigationWindowOffset(currentIndex?: number): number {
@@ -82,9 +103,63 @@ function getFeaturedNavigationPageBudget(currentIndex?: number): number {
   }
 
   return Math.min(
-    FEATURED_NAVIGATION_PAGE_BUDGET,
+    NAVIGATION_PAGE_BUDGET,
     Math.ceil((currentIndex + 1) / FEED_PAGE_SIZE) + 1
   );
+}
+
+function withNavigationIndexes(page: VideoNavigationPage, startIndex: number): VideoNavigationPage {
+  return {
+    ...page,
+    videos: page.videos.map((video, index) => ({
+      ...video,
+      navigationIndex: startIndex + index,
+    })),
+  };
+}
+
+function visibleVideosFromResult(
+  data: { pages: VideoNavigationPage[] } | undefined,
+  blockedPubkeys: ReadonlySet<string>
+): ParsedVideoData[] | null {
+  return flattenUniqueVideos(filterBlockedVideoPages(data, blockedPubkeys)?.pages);
+}
+
+async function fetchVisiblePagePastBlocked(
+  fetchNextPage: () => Promise<{
+    data?: { pages: VideoNavigationPage[] };
+    hasNextPage?: boolean;
+    isError?: boolean;
+    error?: Error | null;
+  }>,
+  currentVideos: ParsedVideoData[] | null,
+  blockedPubkeys: ReadonlySet<string>,
+  pageBudget: number = NAVIGATION_PAGE_BUDGET
+): Promise<ParsedVideoData[] | null> {
+  const startCount = currentVideos?.length ?? 0;
+  let result = await fetchNextPage();
+  if (result.isError) throw result.error ?? new Error('Could not load more videos');
+
+  let visible = visibleVideosFromResult(result.data, blockedPubkeys) ?? currentVideos;
+  let loadedPages = result.data?.pages.length ?? 0;
+  let skipped = 0;
+
+  while (
+    (visible?.length ?? 0) <= startCount &&
+    result.hasNextPage &&
+    skipped < pageBudget
+  ) {
+    result = await fetchNextPage();
+    if (result.isError) throw result.error ?? new Error('Could not load more videos');
+
+    const nextLoadedPages = result.data?.pages.length ?? 0;
+    if (nextLoadedPages <= loadedPages) break;
+    loadedPages = nextLoadedPages;
+    visible = visibleVideosFromResult(result.data, blockedPubkeys) ?? visible;
+    skipped += 1;
+  }
+
+  return visible;
 }
 
 /**
@@ -114,52 +189,60 @@ export function useVideoByIdFunnelcake(options: UseVideoByIdOptions): UseVideoBy
     ? featuredTabId
     : undefined;
 
-  // If we have a pubkey, fetch all their videos for navigation context
-  const userVideosQuery = useQuery({
+  const userVideosQuery = useInfiniteQuery<VideoNavigationPage, Error>({
     queryKey: ['funnelcake-user-videos', pubkey, funnelcakeUrl, windowOffset],
-    queryFn: async ({ signal }) => {
-      if (!pubkey) return null;
+    queryFn: async ({ pageParam, signal }) => {
+      if (!pubkey) {
+        throw new Error('User pubkey is required');
+      }
 
       debugLog(`[useVideoByIdFunnelcake] Fetching user videos for ${pubkey}`);
       const response = await fetchUserVideos(funnelcakeUrl, pubkey, {
         limit: NAVIGATION_WINDOW_SIZE,
-        offset: windowOffset,
+        offset: Number(pageParam),
         sort: 'recent',
         signal,
       });
 
-      return transformNavigationVideos(response.videos);
+      return withNavigationIndexes(transformToVideoPage(response, 'offset'), Number(pageParam));
     },
+    initialPageParam: windowOffset,
+    getNextPageParam: (lastPage) => lastPage.offset,
     enabled: enabled && !!pubkey,
     staleTime: 300000, // 5 minutes
     gcTime: 900000,    // 15 minutes
   });
 
-  // If we have a hashtag, fetch videos from that hashtag for navigation context
-  const hashtagVideosQuery = useQuery({
+  const hashtagVideosQuery = useInfiniteQuery<VideoNavigationPage, Error>({
     queryKey: ['funnelcake-hashtag-videos', hashtag, funnelcakeUrl, windowOffset],
-    queryFn: async ({ signal }) => {
-      if (!hashtag) return null;
+    queryFn: async ({ pageParam, signal }) => {
+      if (!hashtag) {
+        throw new Error('Hashtag is required');
+      }
 
       debugLog(`[useVideoByIdFunnelcake] Fetching hashtag videos for #${hashtag}`);
       const response = await searchVideos(funnelcakeUrl, {
         tag: hashtag,
         limit: NAVIGATION_WINDOW_SIZE,
-        offset: windowOffset,
+        offset: Number(pageParam),
         signal,
       });
 
-      return transformNavigationVideos(response.videos);
+      return withNavigationIndexes(transformToVideoPage(response, 'offset'), Number(pageParam));
     },
+    initialPageParam: windowOffset,
+    getNextPageParam: (lastPage) => lastPage.offset,
     enabled: enabled && !!hashtag && !pubkey, // Only fetch if hashtag context and no pubkey
     staleTime: 300000, // 5 minutes
     gcTime: 900000,    // 15 minutes
   });
 
-  const searchVideosQuery = useQuery({
+  const searchVideosQuery = useInfiniteQuery<VideoNavigationPage, Error>({
     queryKey: ['funnelcake-search-videos', searchValue, sortMode, funnelcakeUrl, windowOffset],
-    queryFn: async ({ signal }) => {
-      if (!searchValue) return null;
+    queryFn: async ({ pageParam, signal }) => {
+      if (!searchValue) {
+        throw new Error('Search query is required');
+      }
 
       debugLog(`[useVideoByIdFunnelcake] Fetching search videos for ${searchValue}`);
       const response = await searchVideos(funnelcakeUrl, {
@@ -167,14 +250,16 @@ export function useVideoByIdFunnelcake(options: UseVideoByIdOptions): UseVideoBy
         tag: isHashtagSearch ? searchValue : undefined,
         sort: mapSearchSortModeToFunnelcakeSort(sortMode),
         limit: NAVIGATION_WINDOW_SIZE,
-        offset: windowOffset,
+        offset: Number(pageParam),
         classic: sortMode === 'classic' ? true : undefined,
         platform: sortMode === 'classic' ? 'vine' : undefined,
         signal,
       });
 
-      return transformNavigationVideos(response.videos);
+      return withNavigationIndexes(transformToVideoPage(response, 'offset'), Number(pageParam));
     },
+    initialPageParam: windowOffset,
+    getNextPageParam: (lastPage) => lastPage.offset,
     enabled: enabled && !!searchValue && !pubkey && !hashtag,
     staleTime: 300000,
     gcTime: 900000,
@@ -198,8 +283,32 @@ export function useVideoByIdFunnelcake(options: UseVideoByIdOptions): UseVideoBy
     () => filterBlockedVideoPages(featuredVideosData, blockedPubkeys),
     [featuredVideosData, blockedPubkeys]
   );
+  const filteredUserVideosData = useMemo(
+    () => filterBlockedVideoPages(userVideosQuery.data, blockedPubkeys),
+    [userVideosQuery.data, blockedPubkeys]
+  );
+  const filteredHashtagVideosData = useMemo(
+    () => filterBlockedVideoPages(hashtagVideosQuery.data, blockedPubkeys),
+    [hashtagVideosQuery.data, blockedPubkeys]
+  );
+  const filteredSearchVideosData = useMemo(
+    () => filterBlockedVideoPages(searchVideosQuery.data, blockedPubkeys),
+    [searchVideosQuery.data, blockedPubkeys]
+  );
+  const userVideos = useMemo(
+    () => flattenUniqueVideos(filteredUserVideosData?.pages),
+    [filteredUserVideosData]
+  );
+  const hashtagVideos = useMemo(
+    () => flattenUniqueVideos(filteredHashtagVideosData?.pages),
+    [filteredHashtagVideosData]
+  );
+  const searchVideosForContext = useMemo(
+    () => flattenUniqueVideos(filteredSearchVideosData?.pages),
+    [filteredSearchVideosData]
+  );
   const featuredVideos = useMemo(
-    () => filteredFeaturedVideosData?.pages.flatMap((page) => page.videos) ?? null,
+    () => flattenUniqueVideos(filteredFeaturedVideosData?.pages),
     [filteredFeaturedVideosData]
   );
   const featuredContextVideo = featuredVideos?.find(v => v.id === videoId || v.vineId === videoId) || null;
@@ -230,7 +339,7 @@ export function useVideoByIdFunnelcake(options: UseVideoByIdOptions): UseVideoBy
     fetchNextFeaturedPage,
   ]);
 
-  const contextVideos = userVideosQuery.data ?? hashtagVideosQuery.data ?? searchVideosQuery.data ?? featuredVideos ?? null;
+  const contextVideos = userVideos ?? hashtagVideos ?? searchVideosForContext ?? featuredVideos ?? null;
   const contextVideo = contextVideos?.find(v => v.id === videoId || v.vineId === videoId) || null;
   let contextLoading = false;
   if (pubkey) {
@@ -257,7 +366,8 @@ export function useVideoByIdFunnelcake(options: UseVideoByIdOptions): UseVideoBy
     !contextVideo
   );
 
-  // Single video lookup (used when no context or as fallback)
+  // Direct video links are addressable Nostr events. Feed/profile navigation is
+  // filtered, but the detail fallback intentionally stays unfiltered.
   const singleVideoQuery = useQuery({
     queryKey: ['funnelcake-video', videoId, funnelcakeUrl],
     queryFn: async ({ signal }) => {
@@ -279,44 +389,55 @@ export function useVideoByIdFunnelcake(options: UseVideoByIdOptions): UseVideoBy
   const error = video
     ? null
     : ((singleVideoQuery.error as Error | null) || contextError);
+  const fetchedCount = pubkey
+    ? (userVideosQuery.data?.pages.reduce((sum, page) => sum + page.videos.length, 0) ?? 0)
+    : hashtag
+      ? (hashtagVideosQuery.data?.pages.reduce((sum, page) => sum + page.videos.length, 0) ?? 0)
+      : searchValue
+        ? (searchVideosQuery.data?.pages.reduce((sum, page) => sum + page.videos.length, 0) ?? 0)
+        : eligibleFeaturedTabId
+          ? (featuredVideosData?.pages.reduce((sum, page) => sum + page.videos.length, 0) ?? 0)
+          : 0;
+  const hasNextPage = pubkey
+    ? Boolean(userVideosQuery.hasNextPage)
+    : hashtag
+      ? Boolean(hashtagVideosQuery.hasNextPage)
+      : searchValue
+        ? Boolean(searchVideosQuery.hasNextPage)
+        : Boolean(eligibleFeaturedTabId && featuredHasNextPage);
+  const isFetchingNextPage = pubkey
+    ? userVideosQuery.isFetchingNextPage
+    : hashtag
+      ? hashtagVideosQuery.isFetchingNextPage
+      : searchValue
+        ? searchVideosQuery.isFetchingNextPage
+        : Boolean(eligibleFeaturedTabId && isFetchingNextFeaturedPage);
 
   return {
     video,
     videos,
     windowOffset: eligibleFeaturedTabId ? 0 : windowOffset,
-    hasNextPage: Boolean(eligibleFeaturedTabId && featuredHasNextPage),
-    isFetchingNextPage: Boolean(eligibleFeaturedTabId && isFetchingNextFeaturedPage),
+    fetchedCount,
+    hasNextPage,
+    isFetchingNextPage,
     fetchNextPage: async () => {
-      if (!eligibleFeaturedTabId || !featuredHasNextPage) return featuredVideos;
-
-      const startCount = featuredVideos?.length ?? 0;
-      let result = await fetchNextFeaturedPage();
-      let visible = filterBlockedVideoPages(result.data, blockedPubkeys)
-        ?.pages.flatMap((page) => page.videos) ?? featuredVideos;
-      let loadedPages = result.data?.pages.length ?? 0;
-
-      // A featured page can be entirely blocked/muted authors; filtered to
-      // nothing it would surface as a spurious "couldn't load next" toast at the
-      // boundary even though visible videos remain further in. Skip past
-      // fully-filtered pages until a visible neighbor appears or the tab ends.
-      // Bounded per keypress, and it stops the moment a fetch makes no progress
-      // (error or no-op) so a failing page can't spin the loop.
-      let skipped = 0;
-      while (
-        (visible?.length ?? 0) <= startCount &&
-        result.hasNextPage &&
-        skipped < FEATURED_NAVIGATION_PAGE_BUDGET
-      ) {
-        result = await fetchNextFeaturedPage();
-        const nextLoadedPages = result.data?.pages.length ?? 0;
-        if (nextLoadedPages <= loadedPages) break;
-        loadedPages = nextLoadedPages;
-        visible = filterBlockedVideoPages(result.data, blockedPubkeys)
-          ?.pages.flatMap((page) => page.videos) ?? visible;
-        skipped += 1;
+      if (pubkey) {
+        if (!userVideosQuery.hasNextPage) return userVideos;
+        return fetchVisiblePagePastBlocked(userVideosQuery.fetchNextPage, userVideos, blockedPubkeys);
       }
 
-      return visible;
+      if (hashtag) {
+        if (!hashtagVideosQuery.hasNextPage) return hashtagVideos;
+        return fetchVisiblePagePastBlocked(hashtagVideosQuery.fetchNextPage, hashtagVideos, blockedPubkeys);
+      }
+
+      if (searchValue) {
+        if (!searchVideosQuery.hasNextPage) return searchVideosForContext;
+        return fetchVisiblePagePastBlocked(searchVideosQuery.fetchNextPage, searchVideosForContext, blockedPubkeys);
+      }
+
+      if (!eligibleFeaturedTabId || !featuredHasNextPage) return featuredVideos;
+      return fetchVisiblePagePastBlocked(fetchNextFeaturedPage, featuredVideos, blockedPubkeys);
     },
     isLoading,
     error,
