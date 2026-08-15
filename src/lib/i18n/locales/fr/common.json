@@ -30,7 +30,9 @@
     "help": "Aide",
     "merch": "Merch",
     "familyResources": "Ressources famille",
-    "kidsPolicy": "Politique enfants"
+    "kidsPolicy": "Politique enfants",
+    "accountPortability": "Account Portability",
+    "deleteAccount": "Delete Account"
   },
   "theme": {
     "lightMode": "Mode clair",
@@ -462,7 +464,8 @@
     "switchRelay": "Changer de relais",
     "switchAccount": "Changer de compte",
     "addAnotherAccount": "Ajouter un autre compte",
-    "logOut": "Se déconnecter"
+    "logOut": "Se déconnecter",
+    "accountPortability": "Move your account"
   },
   "reportContentDialog": {
     "titleVideo": "Signaler la vidéo",

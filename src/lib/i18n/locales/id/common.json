@@ -30,7 +30,9 @@
     "help": "Bantuan",
     "merch": "Merch",
     "familyResources": "Sumber daya keluarga",
-    "kidsPolicy": "Kebijakan anak"
+    "kidsPolicy": "Kebijakan anak",
+    "accountPortability": "Account Portability",
+    "deleteAccount": "Delete Account"
   },
   "theme": {
     "lightMode": "Mode terang",
@@ -462,7 +464,8 @@
     "switchRelay": "Ganti Relay",
     "switchAccount": "Ganti Akun",
     "addAnotherAccount": "Tambah akun lain",
-    "logOut": "Keluar"
+    "logOut": "Keluar",
+    "accountPortability": "Move your account"
   },
   "reportContentDialog": {
     "titleVideo": "Laporkan Video",

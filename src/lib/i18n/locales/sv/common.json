@@ -30,7 +30,9 @@
     "help": "Hjalp",
     "merch": "Merch",
     "familyResources": "Familjeresurser",
-    "kidsPolicy": "Policy for barn"
+    "kidsPolicy": "Policy for barn",
+    "accountPortability": "Account Portability",
+    "deleteAccount": "Delete Account"
   },
   "theme": {
     "lightMode": "Ljust lage",
@@ -462,7 +464,8 @@
     "switchRelay": "Byt relä",
     "switchAccount": "Byt konto",
     "addAnotherAccount": "Lägg till ett annat konto",
-    "logOut": "Logga ut"
+    "logOut": "Logga ut",
+    "accountPortability": "Move your account"
   },
   "reportContentDialog": {
     "titleVideo": "Rapportera video",

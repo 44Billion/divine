@@ -24,6 +24,32 @@ describe('AppFooter', () => {
     expect(screen.getByRole('link', { name: 'DMCA & Copyright' })).toHaveAttribute('href', '/dmca');
   });
 
+  it('renders an account portability docs link', () => {
+    render(
+      <MemoryRouter>
+        <AppFooter />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByRole('link', { name: 'Account Portability' })).toHaveAttribute(
+      'href',
+      '/exit',
+    );
+  });
+
+  it('renders a delete account docs link', () => {
+    render(
+      <MemoryRouter>
+        <AppFooter />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByRole('link', { name: 'Delete Account' })).toHaveAttribute(
+      'href',
+      '/delete-account',
+    );
+  });
+
   it('renders a merch store link', () => {
     render(
       <MemoryRouter>

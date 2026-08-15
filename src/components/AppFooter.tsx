@@ -95,6 +95,14 @@ export function AppFooter() {
                   {t('menu.kidsPolicy')}
                 </SmartLink>
                 <span>•</span>
+                <SmartLink to="/exit" className="hover:text-brand-off-white transition-colors">
+                  Account Portability
+                </SmartLink>
+                <span>•</span>
+                <SmartLink to="/delete-account" className="hover:text-brand-off-white transition-colors">
+                  Delete Account
+                </SmartLink>
+                <span>•</span>
                 <SmartLink to="/dmca" className="hover:text-brand-off-white transition-colors">
                   DMCA & Copyright
                 </SmartLink>

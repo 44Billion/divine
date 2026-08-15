@@ -30,7 +30,9 @@
     "help": "Help",
     "merch": "Merch",
     "familyResources": "Family Resources",
-    "kidsPolicy": "Kids Policy"
+    "kidsPolicy": "Kids Policy",
+    "accountPortability": "Account Portability",
+    "deleteAccount": "Delete Account"
   },
   "theme": {
     "lightMode": "Light mode",
@@ -459,6 +461,7 @@
     "settings": "Settings",
     "linkedAccounts": "Linked Accounts",
     "relays": "Relays",
+    "accountPortability": "Move your account",
     "switchRelay": "Switch Relay",
     "switchAccount": "Switch Account",
     "addAnotherAccount": "Add another account",

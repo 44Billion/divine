@@ -30,7 +30,9 @@
     "help": "Help",
     "merch": "Merch",
     "familyResources": "Gezinsbronnen",
-    "kidsPolicy": "Kinderbeleid"
+    "kidsPolicy": "Kinderbeleid",
+    "accountPortability": "Account Portability",
+    "deleteAccount": "Delete Account"
   },
   "theme": {
     "lightMode": "Lichte modus",
@@ -462,7 +464,8 @@
     "switchRelay": "Relay wisselen",
     "switchAccount": "Account wisselen",
     "addAnotherAccount": "Nog een account toevoegen",
-    "logOut": "Uitloggen"
+    "logOut": "Uitloggen",
+    "accountPortability": "Move your account"
   },
   "reportContentDialog": {
     "titleVideo": "Video melden",

@@ -30,7 +30,9 @@
     "help": "مساعدة",
     "merch": "Merch",
     "familyResources": "موارد العائلة",
-    "kidsPolicy": "سياسة الأطفال"
+    "kidsPolicy": "سياسة الأطفال",
+    "accountPortability": "Account Portability",
+    "deleteAccount": "Delete Account"
   },
   "theme": {
     "lightMode": "الوضع الفاتح",
@@ -482,7 +484,8 @@
     "switchRelay": "تبديل المُرحِّل",
     "switchAccount": "تبديل الحساب",
     "addAnotherAccount": "إضافة حساب آخر",
-    "logOut": "تسجيل الخروج"
+    "logOut": "تسجيل الخروج",
+    "accountPortability": "Move your account"
   },
   "reportContentDialog": {
     "titleVideo": "الإبلاغ عن فيديو",

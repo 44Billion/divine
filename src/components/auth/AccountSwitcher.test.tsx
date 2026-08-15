@@ -105,6 +105,7 @@ const PROTECTED_STATUS: ProtectedMinorStatus = Object.freeze({
 const LOCAL_NSEC_LOGIN = {
   id: 'nsec-login',
   type: 'nsec',
+  pubkey: 'a'.repeat(64),
   data: { nsec: 'nsec1localsecret' },
 };
 
@@ -169,12 +170,22 @@ describe('AccountSwitcher', () => {
     );
   });
 
+  it('links account settings to the account portability entry point', async () => {
+    const user = userEvent.setup();
+
+    render(<AccountSwitcher onAddAccountClick={vi.fn()} />);
+
+    await user.click(screen.getByRole('button', { name: /Move your account/i }));
+
+    expect(mockNavigate).toHaveBeenCalledWith('/exit');
+  });
+
   describe('nsec backup banner mounting (#182)', () => {
     beforeEach(() => {
       mockUseNostrLogin.mockReturnValue({ logins: [LOCAL_NSEC_LOGIN] });
     });
 
-    it('renders the backup banner whenever a local nsec login exists', () => {
+    it('renders the backup banner when the local nsec belongs to the current account', () => {
       render(<AccountSwitcher onAddAccountClick={vi.fn()} />);
 
       expect(screen.getByTestId('local-nsec-banner')).toBeInTheDocument();
@@ -195,6 +206,16 @@ describe('AccountSwitcher', () => {
 
     it('renders no banner without a local nsec login', () => {
       mockUseNostrLogin.mockReturnValue({ logins: [] });
+
+      render(<AccountSwitcher onAddAccountClick={vi.fn()} />);
+
+      expect(screen.queryByTestId('local-nsec-banner')).not.toBeInTheDocument();
+    });
+
+    it('does not expose a local nsec belonging to another account', () => {
+      mockUseNostrLogin.mockReturnValue({
+        logins: [{ ...LOCAL_NSEC_LOGIN, pubkey: 'b'.repeat(64) }],
+      });
 
       render(<AccountSwitcher onAddAccountClick={vi.fn()} />);
 
