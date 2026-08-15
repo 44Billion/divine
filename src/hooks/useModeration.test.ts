@@ -30,6 +30,7 @@ Object.defineProperty(globalThis, 'localStorage', { value: localStorageMock, wri
 
 const mockPublishEvent = vi.fn();
 const mockMuteQuery = vi.fn();
+const mockMuteReq = vi.fn();
 const mockUserPubkey = 'aabbccdd11223344aabbccdd11223344aabbccdd11223344aabbccdd11223344';
 const mockReportedPubkey = '11223344aabbccdd11223344aabbccdd11223344aabbccdd11223344aabbccdd';
 const mockEventId = 'event1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcd';
@@ -41,7 +42,10 @@ vi.mock('@/lib/reportApi', () => ({
 
 vi.mock('@nostrify/react', () => ({
   useNostr: () => ({
-    nostr: { query: mockMuteQuery },
+    nostr: {
+      query: mockMuteQuery,
+      req: mockMuteReq,
+    },
   }),
 }));
 
@@ -234,9 +238,20 @@ function makeMuteEvent(
   };
 }
 
+function mockMuteReqFromQuery() {
+  mockMuteReq.mockImplementation(async function* (filters) {
+    const events = await mockMuteQuery(filters);
+    for (const event of events) {
+      yield ['EVENT', 'subscription', event];
+    }
+    yield ['EOSE', 'subscription'];
+  });
+}
+
 describe('useMuteList', () => {
   beforeEach(() => {
     mockMuteQuery.mockReset();
+    mockMuteReq.mockReset();
   });
 
   it('queries kind 10000 (NIP-51 mute list)', async () => {
@@ -324,7 +339,9 @@ describe('useMuteList', () => {
 describe('useMuteItem', () => {
   beforeEach(() => {
     mockMuteQuery.mockReset();
+    mockMuteReq.mockReset();
     mockPublishEvent.mockReset();
+    mockMuteReqFromQuery();
   });
 
   it('publishes kind 10000 with the new tag when no mute list exists', async () => {
@@ -348,6 +365,25 @@ describe('useMuteItem', () => {
     expect(call.kind).toBe(MUTE_LIST_KIND);
     expect(call.content).toBe('');
     expect(call.tags).toEqual([['p', 'target-pubkey', 'spam']]);
+  });
+
+  it('does not publish kind 3 when muting a user', async () => {
+    mockMuteQuery.mockResolvedValue([]);
+    mockPublishEvent.mockResolvedValue({});
+
+    const { result } = renderHook(() => useMuteItem(), {
+      wrapper: createWrapper(),
+    });
+
+    await act(async () => {
+      await result.current.mutateAsync({
+        type: MuteType.USER,
+        value: 'target-pubkey',
+      });
+    });
+
+    expect(mockPublishEvent).toHaveBeenCalledOnce();
+    expect(mockPublishEvent.mock.calls[0][0].kind).toBe(MUTE_LIST_KIND);
   });
 
   it('preserves existing pin and foreign tags when adding a mute (no clobber)', async () => {
@@ -465,12 +501,34 @@ describe('useMuteItem', () => {
     expect(error).toBeInstanceOf(Error);
     expect((error as Error).message).toBe('relay timeout');
   });
+
+  it('does not publish when the mute-list relay read misses EOSE', async () => {
+    mockMuteReq.mockImplementation(async function* () {
+      yield ['EVENT', 'subscription', makeMuteEvent([['p', 'existing-muted']])];
+    });
+
+    const { result } = renderHook(() => useMuteItem(), { wrapper: createWrapper() });
+
+    let error: unknown;
+    await act(async () => {
+      try {
+        await result.current.mutateAsync({ type: MuteType.USER, value: 'new' });
+      } catch (e) {
+        error = e;
+      }
+    });
+
+    expect(error).toBeInstanceOf(Error);
+    expect(mockPublishEvent).not.toHaveBeenCalled();
+  });
 });
 
 describe('useUnmuteItem', () => {
   beforeEach(() => {
     mockMuteQuery.mockReset();
+    mockMuteReq.mockReset();
     mockPublishEvent.mockReset();
+    mockMuteReqFromQuery();
   });
 
   it('publishes kind 10000 with the matching tag removed', async () => {
@@ -499,6 +557,26 @@ describe('useUnmuteItem', () => {
       ['p', 'keep-me'],
       ['t', 'nsfw'],
     ]);
+  });
+
+  it('does not publish kind 3 when unmuting a user', async () => {
+    const existing = makeMuteEvent([['p', 'remove-me']]);
+    mockMuteQuery.mockResolvedValue([existing]);
+    mockPublishEvent.mockResolvedValue({});
+
+    const { result } = renderHook(() => useUnmuteItem(), {
+      wrapper: createWrapper(),
+    });
+
+    await act(async () => {
+      await result.current.mutateAsync({
+        type: MuteType.USER,
+        value: 'remove-me',
+      });
+    });
+
+    expect(mockPublishEvent).toHaveBeenCalledOnce();
+    expect(mockPublishEvent.mock.calls[0][0].kind).toBe(MUTE_LIST_KIND);
   });
 
   it('preserves content on unmute', async () => {
