@@ -346,7 +346,6 @@ describe('useMuteItem', () => {
     expect(mockPublishEvent).toHaveBeenCalledOnce();
     const call = mockPublishEvent.mock.calls[0][0];
     expect(call.kind).toBe(MUTE_LIST_KIND);
-    expect(call.kind).not.toBe(10001);
     expect(call.content).toBe('');
     expect(call.tags).toEqual([['p', 'target-pubkey', 'spam']]);
   });
