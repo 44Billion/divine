@@ -1,0 +1,128 @@
+name: Merged Blocker Reminder
+
+on:
+  pull_request_target:
+    types: [closed]
+
+permissions:
+  issues: write
+  pull-requests: read
+
+jobs:
+  remind-blocked-issues:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    steps:
+      - name: Mark issues ready when their blocker PR merges
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            const prNumber = pr.number;
+            const { owner, repo } = context.repo;
+            const blockerPattern = new RegExp(
+              String.raw`\bblocked\s+(?:on|by)(?:\s+(?:pr|pull request))?\s+#${prNumber}\b`,
+              'i',
+            );
+            const labels = {
+              blocked: { color: 'cfd3d7', description: 'Waiting on another issue or pull request' },
+              ready: { color: '0e8a16', description: 'Unblocked and ready to pick up' },
+            };
+
+            async function ensureLabel(name) {
+              try {
+                await github.rest.issues.getLabel({ owner, repo, name });
+              } catch (error) {
+                if (error.status !== 404) {
+                  throw error;
+                }
+                await github.rest.issues.createLabel({
+                  owner,
+                  repo,
+                  name,
+                  color: labels[name].color,
+                  description: labels[name].description,
+                });
+              }
+            }
+
+            async function issueMentionsMergedPr(issue) {
+              if (blockerPattern.test(issue.body ?? '')) {
+                return true;
+              }
+
+              const comments = await github.paginate(github.rest.issues.listComments, {
+                owner,
+                repo,
+                issue_number: issue.number,
+                per_page: 100,
+              });
+
+              return comments.some((comment) => blockerPattern.test(comment.body ?? ''));
+            }
+
+            async function alreadyCommented(issueNumber) {
+              const marker = `<!-- merged-blocker-reminder:${prNumber} -->`;
+              const comments = await github.paginate(github.rest.issues.listComments, {
+                owner,
+                repo,
+                issue_number: issueNumber,
+                per_page: 100,
+              });
+
+              return comments.some((comment) => comment.body?.includes(marker));
+            }
+
+            await ensureLabel('blocked');
+            await ensureLabel('ready');
+
+            const issues = await github.paginate(github.rest.issues.listForRepo, {
+              owner,
+              repo,
+              state: 'open',
+              per_page: 100,
+            });
+
+            for (const issue of issues) {
+              if (issue.pull_request || !(await issueMentionsMergedPr(issue))) {
+                continue;
+              }
+
+              const existingLabelNames = issue.labels.map((label) =>
+                typeof label === 'string' ? label : label.name,
+              );
+
+              if (existingLabelNames.includes('blocked')) {
+                await github.rest.issues.removeLabel({
+                  owner,
+                  repo,
+                  issue_number: issue.number,
+                  name: 'blocked',
+                });
+              }
+
+              if (!existingLabelNames.includes('ready')) {
+                await github.rest.issues.addLabels({
+                  owner,
+                  repo,
+                  issue_number: issue.number,
+                  labels: ['ready'],
+                });
+              }
+
+              if (await alreadyCommented(issue.number)) {
+                continue;
+              }
+
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number: issue.number,
+                body: [
+                  `<!-- merged-blocker-reminder:${prNumber} -->`,
+                  `PR #${prNumber} has merged, so this issue is ready to pick back up.`,
+                  '',
+                  'Re-check the issue body and merged PR copy before implementing.',
+                ].join('\n'),
+              });
+            }
