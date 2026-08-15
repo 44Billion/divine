@@ -46,31 +46,15 @@ jobs:
               }
             }
 
-            async function issueMentionsMergedPr(issue) {
-              if (blockerPattern.test(issue.body ?? '')) {
-                return true;
-              }
+            const marker = `<!-- merged-blocker-reminder:${prNumber} -->`;
 
-              const comments = await github.paginate(github.rest.issues.listComments, {
-                owner,
-                repo,
-                issue_number: issue.number,
-                per_page: 100,
-              });
-
-              return comments.some((comment) => blockerPattern.test(comment.body ?? ''));
-            }
-
-            async function alreadyCommented(issueNumber) {
-              const marker = `<!-- merged-blocker-reminder:${prNumber} -->`;
-              const comments = await github.paginate(github.rest.issues.listComments, {
+            async function listComments(issueNumber) {
+              return github.paginate(github.rest.issues.listComments, {
                 owner,
                 repo,
                 issue_number: issueNumber,
                 per_page: 100,
               });
-
-              return comments.some((comment) => comment.body?.includes(marker));
             }
 
             await ensureLabel('blocked');
@@ -84,7 +68,18 @@ jobs:
             });
 
             for (const issue of issues) {
-              if (issue.pull_request || !(await issueMentionsMergedPr(issue))) {
+              if (issue.pull_request) {
+                continue;
+              }
+
+              // Fetched at most once per issue and reused for both the blocker
+              // match and the duplicate-comment check.
+              const comments = issue.comments > 0 ? await listComments(issue.number) : [];
+
+              if (
+                !blockerPattern.test(issue.body ?? '') &&
+                !comments.some((comment) => blockerPattern.test(comment.body ?? ''))
+              ) {
                 continue;
               }
 
@@ -110,7 +105,7 @@ jobs:
                 });
               }
 
-              if (await alreadyCommented(issue.number)) {
+              if (comments.some((comment) => comment.body?.includes(marker))) {
                 continue;
               }
 
@@ -119,7 +114,7 @@ jobs:
                 repo,
                 issue_number: issue.number,
                 body: [
-                  `<!-- merged-blocker-reminder:${prNumber} -->`,
+                  marker,
                   `PR #${prNumber} has merged, so this issue is ready to pick back up.`,
                   '',
                   'Re-check the issue body and merged PR copy before implementing.',
