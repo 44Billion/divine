@@ -32,10 +32,14 @@ jobs:
             async function ensureLabel(name) {
               try {
                 await github.rest.issues.getLabel({ owner, repo, name });
+                return;
               } catch (error) {
                 if (error.status !== 404) {
                   throw error;
                 }
+              }
+
+              try {
                 await github.rest.issues.createLabel({
                   owner,
                   repo,
@@ -43,6 +47,11 @@ jobs:
                   color: labels[name].color,
                   description: labels[name].description,
                 });
+              } catch (error) {
+                // 422 means a concurrently merged PR created it first.
+                if (error.status !== 422) {
+                  throw error;
+                }
               }
             }
 
@@ -57,15 +66,14 @@ jobs:
               });
             }
 
-            await ensureLabel('blocked');
-            await ensureLabel('ready');
-
             const issues = await github.paginate(github.rest.issues.listForRepo, {
               owner,
               repo,
               state: 'open',
               per_page: 100,
             });
+
+            const blockedIssues = [];
 
             for (const issue of issues) {
               if (issue.pull_request) {
@@ -77,12 +85,21 @@ jobs:
               const comments = issue.comments > 0 ? await listComments(issue.number) : [];
 
               if (
-                !blockerPattern.test(issue.body ?? '') &&
-                !comments.some((comment) => blockerPattern.test(comment.body ?? ''))
+                blockerPattern.test(issue.body ?? '') ||
+                comments.some((comment) => blockerPattern.test(comment.body ?? ''))
               ) {
-                continue;
+                blockedIssues.push({ issue, comments });
               }
+            }
 
+            if (blockedIssues.length === 0) {
+              return;
+            }
+
+            await ensureLabel('blocked');
+            await ensureLabel('ready');
+
+            for (const { issue, comments } of blockedIssues) {
               const existingLabelNames = issue.labels.map((label) =>
                 typeof label === 'string' ? label : label.name,
               );
