@@ -210,6 +210,26 @@ describe('useVideoLists hooks', () => {
       expect(mockNostrQuery.mock.calls[0][0][0]).not.toHaveProperty('#a');
       expect(result.current.data?.map((list) => list.id)).toEqual(['matching']);
     });
+
+    it('matches e-tag membership by event id', async () => {
+      const { useVideosInLists } = await import('./useVideoLists');
+      const eventId = '2'.repeat(64);
+
+      mockNostrQuery.mockResolvedValue([
+        listEvent({
+          tags: [
+            ['d', 'matching-e'],
+            ['title', 'Matching e'],
+            ['e', eventId],
+          ],
+        }),
+      ]);
+      const { result } = renderHook(() => useVideosInLists('my-dtag', eventId), { wrapper: createWrapper() });
+
+      await waitFor(() => expect(result.current.isFetched).toBe(true));
+
+      expect(result.current.data?.map((list) => list.id)).toEqual(['matching-e']);
+    });
   });
 
   describe('useCreateVideoList', () => {
@@ -272,8 +292,8 @@ describe('useVideoLists hooks', () => {
             ['t', 'y'],
             ['collaborative', 'true'],
             ['collaborator', OTHER_PUBKEY],
-            ['thumbnail-event', 'thumb1'],
-            ['play-order', 'shuffle'],
+            ['thumbnail', 'thumb1'],
+            ['playorder', 'shuffle'],
             ['a', `${SHORT_VIDEO_KIND}:${TEST_PUBKEY}:a`],
           ]),
         })
@@ -282,7 +302,7 @@ describe('useVideoLists hooks', () => {
       await waitFor(() => expect(videoLists.result.current.isFetching).toBe(false));
     });
 
-    it('omits play-order tag when playOrder is chronological or omitted', async () => {
+    it('omits playorder tag when playOrder is chronological or omitted', async () => {
       const { useCreateVideoList } = await import('./useVideoLists');
       const { result } = renderHook(() => useCreateVideoList(), { wrapper: createWrapper() });
 
@@ -294,7 +314,7 @@ describe('useVideoLists hooks', () => {
         playOrder: 'chronological',
       });
       let tags = (mockPublishAsync.mock.calls[0][0] as { tags: string[][] }).tags;
-      expect(tags.find((t) => t[0] === 'play-order')).toBeUndefined();
+      expect(tags.find((t) => t[0] === 'playorder')).toBeUndefined();
 
       mockPublishAsync.mockClear();
       await result.current.mutateAsync({
@@ -303,7 +323,54 @@ describe('useVideoLists hooks', () => {
         videoCoordinates: [],
       });
       tags = (mockPublishAsync.mock.calls[0][0] as { tags: string[][] }).tags;
-      expect(tags.find((t) => t[0] === 'play-order')).toBeUndefined();
+      expect(tags.find((t) => t[0] === 'playorder')).toBeUndefined();
+    });
+
+    it('preserves source membership and unknown tags when updating metadata', async () => {
+      const { useCreateVideoList } = await import('./useVideoLists');
+      const { result } = renderHook(() => useCreateVideoList(), { wrapper: createWrapper() });
+      const eventId = '2'.repeat(64);
+
+      await result.current.mutateAsync({
+        id: 'mobile-list',
+        name: 'Renamed',
+        videoCoordinates: [],
+        members: [{ type: 'e', value: eventId, sourceTag: ['e', eventId, 'wss://relay.example', 'root'] }],
+        sourceTags: [
+          ['d', 'mobile-list'],
+          ['title', 'Old'],
+          ['client', 'divine-mobile'],
+          ['e', eventId, 'wss://relay.example', 'root'],
+        ],
+      });
+
+      const tags = (mockPublishAsync.mock.calls[0][0] as { tags: string[][] }).tags;
+      expect(tags).toContainEqual(['title', 'Renamed']);
+      expect(tags).toContainEqual(['client', 'divine-mobile']);
+      expect(tags.filter((tag) => tag[0] === 'e')).toEqual([['e', eventId, 'wss://relay.example', 'root']]);
+    });
+
+    it('drops empty and nameless source tags instead of re-signing them', async () => {
+      const { useCreateVideoList } = await import('./useVideoLists');
+      const { result } = renderHook(() => useCreateVideoList(), { wrapper: createWrapper() });
+
+      await result.current.mutateAsync({
+        id: 'mobile-list',
+        name: 'Renamed',
+        videoCoordinates: [],
+        members: [],
+        sourceTags: [
+          ['d', 'mobile-list'],
+          ['title', 'Old'],
+          [],
+          [''],
+          ['client', 'divine-mobile'],
+        ],
+      });
+
+      const tags = (mockPublishAsync.mock.calls[0][0] as { tags: string[][] }).tags;
+      expect(tags).toContainEqual(['client', 'divine-mobile']);
+      expect(tags.every((tag) => tag.length > 0 && tag[0] !== '')).toBe(true);
     });
 
     it('prepends new list to video-lists cache on success (before refetch)', async () => {
@@ -417,6 +484,61 @@ describe('useVideoLists hooks', () => {
       expect(tags).toContainEqual(['image', 'https://cover.example/img.jpg']);
       expect(tags.filter((t) => t[0] === 'a').map((t) => t[1])).toEqual([existing, incoming]);
     });
+
+    it('adds one coordinate without dropping existing e-tag members', async () => {
+      const eventId = '3'.repeat(64);
+      const incoming = `${SHORT_VIDEO_KIND}:${TEST_PUBKEY}:new-vid`;
+      mockNostrQuery.mockResolvedValue([
+        listEvent({
+          tags: [
+            ['d', 'my-list'],
+            ['title', 'Mobile list'],
+            ['client', 'divine-mobile'],
+            ['e', eventId],
+          ],
+        }),
+      ]);
+      const { useAddVideoToList } = await import('./useVideoLists');
+      const { result } = renderHook(() => useAddVideoToList(), { wrapper: createWrapper() });
+
+      mockPublishAsync.mockClear();
+      await result.current.mutateAsync({
+        listId: 'my-list',
+        ownerPubkey: TEST_PUBKEY,
+        videoCoordinate: incoming,
+      });
+
+      const tags = (mockPublishAsync.mock.calls[0][0] as { tags: string[][] }).tags;
+      expect(tags).toContainEqual(['client', 'divine-mobile']);
+      expect(tags.filter((t) => t[0] === 'e')).toEqual([['e', eventId]]);
+      expect(tags.filter((t) => t[0] === 'a')).toEqual([['a', incoming]]);
+    });
+
+    it('returns without publishing when video already exists as an e-tag member', async () => {
+      const eventId = '6'.repeat(64);
+      const incoming = `${SHORT_VIDEO_KIND}:${TEST_PUBKEY}:vid-1`;
+      mockNostrQuery.mockResolvedValue([
+        listEvent({
+          tags: [
+            ['d', 'my-list'],
+            ['title', 'Mobile list'],
+            ['e', eventId],
+          ],
+        }),
+      ]);
+      const { useAddVideoToList } = await import('./useVideoLists');
+      const { result } = renderHook(() => useAddVideoToList(), { wrapper: createWrapper() });
+
+      mockPublishAsync.mockClear();
+      await result.current.mutateAsync({
+        listId: 'my-list',
+        ownerPubkey: TEST_PUBKEY,
+        videoCoordinate: incoming,
+        videoEventId: eventId,
+      });
+
+      expect(mockPublishAsync).not.toHaveBeenCalled();
+    });
   });
 
   describe('useRemoveVideoFromList', () => {
@@ -429,7 +551,7 @@ describe('useVideoLists hooks', () => {
         result.current.mutateAsync({
           listId: 'x',
           ownerPubkey: TEST_PUBKEY,
-          videoCoordinate: `${SHORT_VIDEO_KIND}:${TEST_PUBKEY}:v`,
+          videoMember: { type: 'a', value: `${SHORT_VIDEO_KIND}:${TEST_PUBKEY}:v` },
         })
       ).rejects.toThrow('List not found');
     });
@@ -443,7 +565,7 @@ describe('useVideoLists hooks', () => {
         result.current.mutateAsync({
           listId: 'any',
           ownerPubkey: TEST_PUBKEY,
-          videoCoordinate: `${SHORT_VIDEO_KIND}:${TEST_PUBKEY}:v`,
+          videoMember: { type: 'a', value: `${SHORT_VIDEO_KIND}:${TEST_PUBKEY}:v` },
         })
       ).rejects.toThrow('Invalid list format');
     });
@@ -474,7 +596,7 @@ describe('useVideoLists hooks', () => {
       await result.current.mutateAsync({
         listId: 'my-list',
         ownerPubkey: TEST_PUBKEY,
-        videoCoordinate: coord1,
+        videoMember: { type: 'a', value: coord1 },
       });
 
       expect(mockPublishAsync).toHaveBeenCalledTimes(1);
@@ -490,6 +612,36 @@ describe('useVideoLists hooks', () => {
       expect(tags).toContainEqual(['thumbnail-event', 'th']);
       expect(tags).toContainEqual(['play-order', 'reverse']);
       expect(tags.filter((t) => t[0] === 'a').map((t) => t[1])).toEqual([coord2]);
+    });
+
+    it('removes an e-tag member without dropping the rest of the list', async () => {
+      const keepEventId = '4'.repeat(64);
+      const removeEventId = '5'.repeat(64);
+      const coord = `${SHORT_VIDEO_KIND}:${TEST_PUBKEY}:coord`;
+      mockNostrQuery.mockResolvedValue([
+        listEvent({
+          tags: [
+            ['d', 'my-list'],
+            ['title', 'Mobile list'],
+            ['e', keepEventId],
+            ['e', removeEventId],
+            ['a', coord],
+          ],
+        }),
+      ]);
+      const { useRemoveVideoFromList } = await import('./useVideoLists');
+      const { result } = renderHook(() => useRemoveVideoFromList(), { wrapper: createWrapper() });
+
+      mockPublishAsync.mockClear();
+      await result.current.mutateAsync({
+        listId: 'my-list',
+        ownerPubkey: TEST_PUBKEY,
+        videoMember: { type: 'e', value: removeEventId },
+      });
+
+      const tags = (mockPublishAsync.mock.calls[0][0] as { tags: string[][] }).tags;
+      expect(tags.filter((t) => t[0] === 'e')).toEqual([['e', keepEventId]]);
+      expect(tags.filter((t) => t[0] === 'a')).toEqual([['a', coord]]);
     });
   });
 
@@ -526,16 +678,22 @@ describe('useVideoLists hooks', () => {
           name: 'Keep',
           pubkey: TEST_PUBKEY,
           createdAt: 1,
+          members: [],
+          memberCount: 0,
           videoCoordinates: [],
           public: true,
+          sourceTags: [],
         },
         {
           id: 'del-me',
           name: 'Delete',
           pubkey: TEST_PUBKEY,
           createdAt: 2,
+          members: [],
+          memberCount: 0,
           videoCoordinates: [],
           public: true,
+          sourceTags: [],
         },
       ]);
 
@@ -613,7 +771,7 @@ describe('useVideoLists hooks', () => {
         ],
         expect.any(Object)
       );
-      expect((result.current.data ?? []).every((l) => l.videoCoordinates.length > 0)).toBe(true);
+      expect((result.current.data ?? []).every((l) => l.memberCount > 0)).toBe(true);
     });
   });
 });

@@ -27,9 +27,11 @@ import { format } from 'date-fns';
 import { useToast } from '@/hooks/useToast';
 import { buildListPath } from '@/lib/eventRouting';
 import { SHORT_VIDEO_KIND } from '@/types/video';
+import { memberMatchesCoordinate, memberMatchesVideoId } from '@/lib/parseVideoListFromEvent';
 
 interface AddToListDialogProps {
   videoId: string;
+  videoEventId?: string;
   videoPubkey: string;
   open: boolean;
   onClose: () => void;
@@ -37,6 +39,7 @@ interface AddToListDialogProps {
 
 export function AddToListDialog({
   videoId,
+  videoEventId,
   videoPubkey,
   open,
   onClose
@@ -46,7 +49,7 @@ export function AddToListDialog({
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { data: userLists, isLoading: listsLoading } = useVideoLists(user?.pubkey);
-  const { data: publicLists, isLoading: publicListsLoading } = useVideosInLists(videoId);
+  const { data: publicLists, isLoading: publicListsLoading } = useVideosInLists(videoId, videoEventId);
   const addToList = useAddVideoToList();
   const createList = useCreateVideoList();
 
@@ -67,6 +70,7 @@ export function AddToListDialog({
           listId: list.id,
           ownerPubkey: list.pubkey,
           videoCoordinate,
+          videoEventId,
         }),
       );
 
@@ -182,7 +186,7 @@ export function AddToListDialog({
                     <div className="min-w-0">
                       <div className="text-sm font-medium truncate">{list.name}</div>
                       <div className="text-xs text-muted-foreground truncate">
-                        {t('addToListDialog.videoCount', { count: list.videoCoordinates.length })} • {format(new Date(list.createdAt * 1000), 'MMM d, yyyy')}
+                        {t('addToListDialog.videoCount', { count: list.memberCount })} • {format(new Date(list.createdAt * 1000), 'MMM d, yyyy')}
                       </div>
                     </div>
                     <ExternalLink className="h-4 w-4 text-muted-foreground shrink-0" />
@@ -213,7 +217,9 @@ export function AddToListDialog({
                 <ScrollArea className="h-64 w-full rounded-md border p-4">
                   <div className="space-y-2">
                     {userLists.map((list) => {
-                      const isInList = list.videoCoordinates.includes(videoCoordinate);
+                      const isInList = list.members.some((member) => (
+                        memberMatchesCoordinate(member, videoCoordinate) || memberMatchesVideoId(member, videoId, videoEventId)
+                      ));
                       return (
                         <div
                           key={list.id}
@@ -244,7 +250,7 @@ export function AddToListDialog({
                             )}
                           </Label>
                           <span className="text-xs text-muted-foreground">
-                            {t('addToListDialog.videoCount', { count: list.videoCoordinates.length })}
+                            {t('addToListDialog.videoCount', { count: list.memberCount })}
                           </span>
                         </div>
                       );
