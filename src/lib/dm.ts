@@ -63,7 +63,7 @@ export interface DmConversation {
   unreadCount: number;
 }
 
-interface DmRumorEvent {
+export interface DmRumorEvent {
   id: string;
   pubkey: string;
   kind: number;
@@ -72,12 +72,20 @@ interface DmRumorEvent {
   content: string;
 }
 
-export interface CreateDmGiftWrapsInput {
-  signer: NostrSigner;
+export interface BuildDmRumorInput {
   senderPubkey: string;
   recipientPubkeys: string[];
   content: string;
   additionalTags?: string[][];
+}
+
+export interface CreateDmGiftWrapsInput extends BuildDmRumorInput {
+  signer: NostrSigner;
+  /**
+   * Rumor to wrap. Omit to mint a fresh one. Pass the rumor from a previous
+   * attempt to re-wrap the same message — see `buildDmRumor` (#578).
+   */
+  rumor?: DmRumorEvent;
 }
 
 export interface FetchDmMessagesInput {
@@ -195,7 +203,7 @@ function createRelayPool(relayUrls: string[]): NPool<NRelay1> {
   });
 }
 
-function isRumorEvent(value: unknown): value is DmRumorEvent {
+export function isRumorEvent(value: unknown): value is DmRumorEvent {
   if (!value || typeof value !== 'object') return false;
 
   const rumor = value as Partial<DmRumorEvent>;
@@ -388,6 +396,33 @@ function createWrapEvent(seal: NostrEvent, targetPubkey: string): NostrEvent {
 }
 
 /**
+ * Build the kind-14 rumor for a NIP-17 send.
+ *
+ * The rumor id is a message's only stable identity: NIP-59 mints a fresh
+ * ephemeral keypair per gift wrap and randomizes the wrap/seal `created_at`,
+ * and NIP-44 v2 randomizes the nonce, so nothing in the outer layers repeats
+ * between two wraps of the same message. Callers that may send a message more
+ * than once — a retry, or the recipient copy plus the self copy — must mint
+ * the rumor once here and hand it to both wrap builders, or each attempt
+ * delivers a message the receiver cannot recognize as a duplicate (#578).
+ *
+ * NIP-59: "If a rumor is intended for more than one party, or if the author
+ * wants to retain an encrypted copy, a single rumor may be wrapped and
+ * addressed for each recipient individually."
+ */
+export function buildDmRumor(input: BuildDmRumorInput): DmRumorEvent {
+  const { senderPubkey, recipientPubkeys, content, additionalTags = [] } = input;
+  const recipients = recipientPubkeys.filter(isPubkey);
+
+  if (!recipients.length) {
+    throw new Error('Direct messages require at least one recipient');
+  }
+
+  const allParticipants = [...new Set([senderPubkey, ...recipients])];
+  return createRumorEvent(senderPubkey, allParticipants, content, additionalTags);
+}
+
+/**
  * Create gift wraps targeted at the recipients of a NIP-17 DM.
  *
  * Throws on any failure. This is the primary path: if it can't produce
@@ -405,15 +440,14 @@ function createWrapEvent(seal: NostrEvent, targetPubkey: string): NostrEvent {
  * let a protected minor DM a non-approved account.
  */
 export async function createRecipientGiftWraps(input: CreateDmGiftWrapsInput): Promise<NostrEvent[]> {
-  const { signer, senderPubkey, recipientPubkeys, content, additionalTags = [] } = input;
+  const { signer, recipientPubkeys } = input;
   const recipients = recipientPubkeys.filter(isPubkey);
 
   if (!recipients.length) {
     throw new Error('Direct messages require at least one recipient');
   }
 
-  const allParticipants = [...new Set([senderPubkey, ...recipients])];
-  const rumor = createRumorEvent(senderPubkey, allParticipants, content, additionalTags);
+  const rumor = input.rumor ?? buildDmRumor(input);
 
   const wraps: NostrEvent[] = [];
   for (const recipient of recipients) {
@@ -432,13 +466,15 @@ export async function createRecipientGiftWraps(input: CreateDmGiftWrapsInput): P
  * throw on null; the recipient delivery has already happened (or failed
  * loudly via `createRecipientGiftWraps`), and the self copy is purely a
  * recovery path.
+ *
+ * Pass the same `rumor` handed to `createRecipientGiftWraps` so both copies
+ * of a message share one id — otherwise the sender's recovered copy is a
+ * different message from the one the recipient holds (#578).
  */
 export async function createSelfGiftWrap(input: CreateDmGiftWrapsInput): Promise<NostrEvent | null> {
   try {
-    const { signer, senderPubkey, recipientPubkeys, content, additionalTags = [] } = input;
-    const recipients = recipientPubkeys.filter(isPubkey);
-    const allParticipants = [...new Set([senderPubkey, ...recipients])];
-    const rumor = createRumorEvent(senderPubkey, allParticipants, content, additionalTags);
+    const { signer, senderPubkey } = input;
+    const rumor = input.rumor ?? buildDmRumor(input);
     const seal = await createSealEvent(signer, senderPubkey, rumor);
     return createWrapEvent(seal, senderPubkey);
   } catch (cause) {
@@ -584,6 +620,7 @@ export async function fetchDmMessages(input: FetchDmMessagesInput): Promise<Fetc
     );
 
     const messages: DmMessage[] = [];
+    const seenRumorIds = new Set<string>();
     let decryptFailures = 0;
     let malformedCount = 0;
 
@@ -591,8 +628,21 @@ export async function fetchDmMessages(input: FetchDmMessagesInput): Promise<Fetc
       const outcome = outcomes[i];
       if (outcome.ok) {
         const built = buildMessageFromRumor(events[i], outcome.rumor, currentUserPubkey);
-        if (built) messages.push(built);
-        else malformedCount++;
+        if (!built) {
+          malformedCount++;
+          continue;
+        }
+
+        // Collapse on the rumor id, not the wrap id. NIP-59 mints a fresh
+        // ephemeral keypair per gift wrap and randomizes the wrap/seal
+        // created_at, and NIP-44 randomizes the nonce, so two wraps of one
+        // message share nothing on the outside — keying the list on wrapId
+        // renders a re-published message twice (#578). This holds against
+        // any source of a duplicate wrap, not only this client's retries.
+        if (seenRumorIds.has(built.rumorId)) continue;
+        seenRumorIds.add(built.rumorId);
+
+        messages.push(built);
       } else if (outcome.reason === 'decrypt-failed') {
         decryptFailures++;
       } else {
@@ -705,7 +755,7 @@ export function calculateUnsignedEventHash(
     event.content,
   ]);
 
-  return bytesToHex(sha256(Uint8Array.from(new TextEncoder().encode(serializedEvent))));
+  return bytesToHex(sha256(new TextEncoder().encode(serializedEvent)));
 }
 
 export function decodeConversationId(conversationId: string): string[] {
@@ -736,48 +786,6 @@ export function getDmMessagePreview(message: DmMessage): string {
   }
 
   return 'Sent a message';
-}
-
-interface BuildOptimisticDmMessageInput {
-  currentUserPubkey: string;
-  participantPubkeys: string[];
-  content: string;
-  share?: DmSharePayload;
-  wraps: NostrEvent[];
-  createdAt?: number;
-}
-
-export function buildOptimisticDmMessage(input: BuildOptimisticDmMessageInput): DmMessage | null {
-  const {
-    currentUserPubkey,
-    participantPubkeys,
-    content,
-    share,
-    wraps,
-    createdAt = Math.round(Date.now() / 1000),
-  } = input;
-
-  const peerPubkeys = [...new Set(participantPubkeys.filter((pubkey) => pubkey !== currentUserPubkey))].sort();
-  if (!peerPubkeys.length) {
-    return null;
-  }
-
-  const participantList = [...new Set([currentUserPubkey, ...peerPubkeys])].sort();
-  const selfWrap = wraps.find((wrap) => wrap.tags.some((tag) => tag[0] === 'p' && tag[1] === currentUserPubkey));
-  const wrapId = selfWrap?.id || `optimistic:${currentUserPubkey}:${peerPubkeys.join(',')}:${createdAt}`;
-
-  return {
-    conversationId: encodeConversationId(peerPubkeys),
-    wrapId,
-    rumorId: wrapId,
-    senderPubkey: currentUserPubkey,
-    participantPubkeys: participantList,
-    peerPubkeys,
-    content,
-    createdAt,
-    isOutgoing: true,
-    share,
-  };
 }
 
 export function groupDmConversations(
