@@ -22,6 +22,8 @@ function queryPartnershipDisclosure(): HTMLElement | null {
   );
 }
 
+const FEATURED_GLYPH = '🌮';
+
 const {
   mockNavigate,
   mockCategories,
@@ -220,7 +222,7 @@ describe('DiscoveryPage', () => {
 
     expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual([
       'Clasico',
-      'DestacadoSkate week',
+      `${FEATURED_GLYPH}DestacadoSkate week`,
       'Popular',
       'Etiquetas',
     ]);
@@ -247,7 +249,7 @@ describe('DiscoveryPage', () => {
     expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual([
       'Para ti',
       'Clasico',
-      'Destacado',
+      `${FEATURED_GLYPH}Destacado`,
       'Popular',
       'Etiquetas',
     ]);
@@ -566,6 +568,57 @@ describe('DiscoveryPage', () => {
       const pill = screen.getByTestId('featured-tab-pill');
       expect(pill).toHaveClass('bg-brand-yellow', 'text-brand-dark-green');
       expect(pill).not.toHaveClass('bg-background/80');
+    });
+  });
+
+  describe('featured tab glyph', () => {
+    const FEATURED: ResolvedFeaturedTab = {
+      id: 'ft_1234abcd',
+      slug: 'seasonal-theme',
+      label: 'Especial',
+      pillLabel: null,
+      sponsorName: null,
+    };
+
+    function renderFeatured() {
+      mockFeaturedTab.current = FEATURED;
+      return render(
+        <MemoryRouter initialEntries={['/discovery/classics']}>
+          <Routes>
+            <Route path="/discovery/:tab" element={<DiscoveryPage />} />
+          </Routes>
+        </MemoryRouter>,
+      );
+    }
+
+    it('renders the editorial emoji instead of an icon', () => {
+      renderFeatured();
+
+      const featured = screen.getByRole('tab', { name: 'Destacado' });
+      expect(featured).toHaveTextContent(FEATURED_GLYPH);
+      expect(featured.querySelector('svg')).toBeNull();
+    });
+
+    // The glyph is decoration on top of the trigger's own aria-label, so it
+    // must not leak into the accessible name or the tab's text.
+    it('hides the glyph from assistive technology and from the tab label', () => {
+      renderFeatured();
+
+      const featured = screen.getByRole('tab', { name: 'Destacado' });
+      const glyph = featured.querySelector('[aria-hidden="true"]');
+      expect(glyph).not.toBeNull();
+      expect(glyph).toHaveTextContent(FEATURED_GLYPH);
+      expect(featured).toHaveAttribute('aria-label', 'Destacado');
+    });
+
+    it('leaves the non-featured tabs on their own icons', () => {
+      renderFeatured();
+
+      for (const name of ['Clasico', 'Popular', 'Etiquetas']) {
+        const trigger = screen.getByRole('tab', { name });
+        expect(trigger.querySelector('svg')).not.toBeNull();
+        expect(trigger.textContent).not.toContain(FEATURED_GLYPH);
+      }
     });
   });
 });
