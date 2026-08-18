@@ -107,6 +107,34 @@ describe('PWAInstallPrompt', () => {
     expect(await screen.findByRole('link', { name: 'Download Divine on the App Store' })).toBeVisible();
   });
 
+  // The store actions are `flex-1` inside a `flex-wrap` row, and the button
+  // base class sets `whitespace-nowrap`. `min-w-0` removes each item's
+  // min-content floor, so instead of the row wrapping when the labels no longer
+  // fit, the items shrink under their own text and the label spills outside the
+  // pill. jsdom performs no layout, so only the absence of the floor-removal is
+  // checkable here.
+  //
+  // A user agent that is neither iOS nor Android is the case in the bug report:
+  // it renders both store actions, which is the widest the row ever gets. Each
+  // action has to be checked on its own, because an Android visitor only ever
+  // sees the Google Play one and an iOS visitor only the App Store one.
+  it('lets both store actions keep their content width so the row wraps instead of clipping', async () => {
+    setNavigator({
+      userAgent:
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+      languages: ['en-US'],
+    });
+
+    renderPrompt();
+
+    const appStore = await screen.findByRole('link', { name: 'Download Divine on the App Store' });
+    const googlePlay = screen.getByRole('link', { name: 'Get Divine on Google Play' });
+
+    expect(appStore).not.toHaveClass('min-w-0');
+    expect(googlePlay).not.toHaveClass('min-w-0');
+    expect(appStore.parentElement).toHaveClass('flex-wrap');
+  });
+
   it('does not inject a third-party lookup script', async () => {
     setNavigator({
       userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Version/18.0 Mobile/15E148 Safari/604.1',
