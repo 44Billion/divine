@@ -24,7 +24,7 @@ describe('FAQPage', () => {
     expect(screen.getByRole('link', { name: 'DMCA policy' })).toHaveAttribute('href', '/dmca');
   });
 
-  it('describes the current private channel as Support-only', () => {
+  it('scopes the private messaging answer to each surface', () => {
     render(
       <MemoryRouter>
         <FAQPage />
@@ -33,8 +33,14 @@ describe('FAQPage', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /can i block users\?/i }));
 
-    expect(screen.getByText('Private support messages')).toBeInTheDocument();
+    expect(screen.getByText('Private messages')).toBeInTheDocument();
     expect(screen.getByText(/on Divine Web, the current private messaging channel is for contacting Divine Support/i))
+      .toBeInTheDocument();
+    expect(screen.getByText(/in the Divine mobile app you can also message people directly/i))
+      .toBeInTheDocument();
+    // Guard the privacy sentence on the SPA surface too, not just its first clause,
+    // so it can't silently diverge from the prerendered mirror.
+    expect(screen.getByText(/those messages are end-to-end encrypted and don't reach Divine Support/i))
       .toBeInTheDocument();
     expect(screen.queryByText(/direct messages between users/i))
       .not.toBeInTheDocument();
