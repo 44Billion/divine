@@ -183,6 +183,16 @@ time, verifies advertised SHA-256 hashes, and records partial failures without
 changing signed events. Viewer authorization is retried only for the exact
 `https://media.divine.video` origin; third-party media requests remain bare.
 
+After an archive is built, the same page can mirror its unique source blobs to a
+custom HTTPS Blossom destination with BUD-04 `PUT /mirror`. Destination URLs
+normalize to the domain root because BUD-01 serves every Blossom endpoint there.
+The first eligible
+copy is the destination capability canary, kind-24242 upload authorization is
+scoped to one advertised hash, and later file failures do not stop the remaining
+copies. Sources without an advertised hash and generated HLS manifests are
+skipped. Descriptor hashes and redirect-aware `HEAD` readback results remain
+distinct from independent byte hashing.
+
 ## Linting
 
 ESLint 9 with TypeScript, React Hooks, HTML, and three custom rules in
