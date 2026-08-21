@@ -30,9 +30,20 @@ describe("useDestinationMirror", () => {
     });
 
     expect(result.current.state).toBe("failed");
+    expect(result.current.destination).toBeNull();
     expect(result.current.failure).toBe(
       "Blossom servers answer at the domain root. Use https://blossom.example instead.",
     );
+  });
+
+  it("does not retain a destination when the copy fails", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null, { status: 401 })));
+    const { result } = renderHook(() => useDestinationMirror({ files: files(fixturePubkey), signer }));
+
+    await act(async () => result.current.start("https://blossom.example"));
+
+    expect(result.current.state).toBe("failed");
+    expect(result.current.destination).toBeNull();
   });
 
   it("aborts active work and clears its state when the account changes", async () => {
@@ -58,5 +69,6 @@ describe("useDestinationMirror", () => {
     expect(result.current.summary).toBeNull();
     expect(result.current.results).toBeNull();
     expect(result.current.failure).toBeNull();
+    expect(result.current.destination).toBeNull();
   });
 });
