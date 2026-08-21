@@ -439,6 +439,8 @@
     "bunkerLabel": "Bunker URI'si",
     "bunkerPlaceholder": "bunker://",
     "bunkerButton": "Bunker ile Giriş Yap",
+    "bunkerAuthPrompt": "İmzalayıcın onayını bekliyor. Sayfasını açmayı denedik ama tarayıcın engelledi — buradan aç:",
+    "bunkerAuthLink": "İmzalayıcında onayla",
     "connecting": "Bağlanıyor...",
     "errorExtensionNotFound": "Nostr eklentisi bulunamadı. Lütfen bir NIP-07 eklentisi yükle.",
     "errorExtensionLoginFailed": "Eklenti girişi başarısız",

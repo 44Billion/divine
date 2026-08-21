@@ -439,6 +439,8 @@
     "bunkerLabel": "Bunker-URI",
     "bunkerPlaceholder": "bunker://",
     "bunkerButton": "Logga in med Bunker",
+    "bunkerAuthPrompt": "Din signerare behöver ditt godkännande. Vi försökte öppna sidan men din webbläsare blockerade den — öppna den här:",
+    "bunkerAuthLink": "Godkänn i din signerare",
     "connecting": "Ansluter...",
     "errorExtensionNotFound": "Hittade inget Nostr-tillägg. Installera ett NIP-07-tillägg.",
     "errorExtensionLoginFailed": "Inloggning med tillägg misslyckades",

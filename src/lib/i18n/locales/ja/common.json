@@ -439,6 +439,8 @@
     "bunkerLabel": "Bunker URI",
     "bunkerPlaceholder": "bunker://",
     "bunkerButton": "Bunkerでログイン",
+    "bunkerAuthPrompt": "署名アプリの承認が必要です。ページを開こうとしましたがブラウザにブロックされました。こちらから開いてください:",
+    "bunkerAuthLink": "署名アプリで承認する",
     "connecting": "接続中...",
     "errorExtensionNotFound": "Nostr拡張機能が見つかりません。NIP-07拡張機能をインストールしてください。",
     "errorExtensionLoginFailed": "拡張機能でのログインに失敗しました",

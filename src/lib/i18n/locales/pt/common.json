@@ -439,6 +439,8 @@
     "bunkerLabel": "URI do Bunker",
     "bunkerPlaceholder": "bunker://",
     "bunkerButton": "Entrar com Bunker",
+    "bunkerAuthPrompt": "O seu assinador precisa da sua aprovação. Tentámos abrir a página dele e o navegador bloqueou — abra aqui:",
+    "bunkerAuthLink": "Aprovar no seu assinador",
     "connecting": "Conectando...",
     "errorExtensionNotFound": "Extensão Nostr não encontrada. Instale uma extensão NIP-07.",
     "errorExtensionLoginFailed": "Falha no login pela extensão",

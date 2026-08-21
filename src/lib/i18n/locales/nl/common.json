@@ -439,6 +439,8 @@
     "bunkerLabel": "Bunker-URI",
     "bunkerPlaceholder": "bunker://",
     "bunkerButton": "Inloggen met Bunker",
+    "bunkerAuthPrompt": "Je signer wacht op goedkeuring. We probeerden de pagina te openen, maar je browser blokkeerde dat — open hem hier:",
+    "bunkerAuthLink": "Goedkeuren in je signer",
     "connecting": "Verbinden...",
     "errorExtensionNotFound": "Nostr-extensie niet gevonden. Installeer een NIP-07-extensie.",
     "errorExtensionLoginFailed": "Inloggen met extensie mislukt",

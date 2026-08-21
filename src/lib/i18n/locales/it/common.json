@@ -439,6 +439,8 @@
     "bunkerLabel": "URI Bunker",
     "bunkerPlaceholder": "bunker://",
     "bunkerButton": "Accedi con Bunker",
+    "bunkerAuthPrompt": "Il tuo firmatario ha bisogno della tua approvazione. Abbiamo provato ad aprire la sua pagina e il browser l’ha bloccata: aprila qui:",
+    "bunkerAuthLink": "Approva nel firmatario",
     "connecting": "Connessione...",
     "errorExtensionNotFound": "Estensione Nostr non trovata. Installa un'estensione NIP-07.",
     "errorExtensionLoginFailed": "Accesso con estensione non riuscito",
