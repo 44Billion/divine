@@ -1,25 +1,24 @@
-import type { ProductAnalyticsPayload } from '@/lib/analyticsClient';
+import type { ProductAnalyticsV2Event } from '@/generated/productAnalytics';
 
 export const PRODUCT_EVENT_MAX_ATTEMPTS = 5;
 
 /**
  * Hard bounds on what may sit on a user's disk.
  *
- * Records here contain a pubkey and a session id, and the ingest endpoint is
- * not live yet, so without these every batch retries to dead and stays there
- * forever. Dead letters expire; pending records expire; and the queue as a
- * whole is capped, dropping the oldest first.
+ * Dead letters expire; pending records expire; and the queue as a whole is
+ * capped, dropping the oldest first.
  */
 export const PRODUCT_EVENT_MAX_RECORDS = 500;
 export const PRODUCT_EVENT_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
 const DB_NAME = 'divine_product_events';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const STORE_NAME = 'product_event_queue';
 
 export interface ProductEventQueueRecord {
   id: string;
-  event: ProductAnalyticsPayload;
+  event: ProductAnalyticsV2Event;
+  owner_pubkey?: string;
   created_at: number;
   next_attempt_at: number;
   attempt_count: number;
@@ -42,10 +41,11 @@ export class ProductEventQueue {
     this.initPromise = this.init();
   }
 
-  async enqueue(event: ProductAnalyticsPayload): Promise<void> {
+  async enqueue(event: ProductAnalyticsV2Event, ownerPubkey?: string): Promise<void> {
     const record: ProductEventQueueRecord = {
       id: event.event_id,
       event,
+      owner_pubkey: ownerPubkey,
       created_at: Date.now(),
       next_attempt_at: Date.now(),
       attempt_count: 0,
@@ -55,23 +55,25 @@ export class ProductEventQueue {
     await this.enforceBounds();
   }
 
-  /**
-   * Pending records ready to send, oldest first.
-   *
-   * `ownerPubkey` scopes the read to one account. Records outlive the session
-   * that queued them, so an unscoped read lets account A's backlog be POSTed
-   * under account B's request signature once B logs in. Callers that send
-   * always pass the owner; the bare form exists for inspection and tests.
-   */
   async getFlushableBatch(limit: number, ownerPubkey?: string): Promise<ProductEventQueueRecord[]> {
     const records = await this.prune(await this.getAllRecords());
     const now = Date.now();
 
     return records
       .filter((record) => record.status === 'pending' && record.next_attempt_at <= now)
-      .filter((record) => !ownerPubkey || record.event.user_pubkey === ownerPubkey)
+      .filter((record) => !ownerPubkey || record.owner_pubkey === ownerPubkey)
       .sort((a, b) => a.created_at - b.created_at)
       .slice(0, limit);
+  }
+
+  async getSignedFlushableBatch(limit: number, ownerPubkey: string): Promise<ProductEventQueueRecord[]> {
+    const records = await this.getFlushableBatch(PRODUCT_EVENT_MAX_RECORDS, ownerPubkey);
+    return records.slice(0, limit);
+  }
+
+  async getAnonymousFlushableBatch(limit: number): Promise<ProductEventQueueRecord[]> {
+    const records = await this.getFlushableBatch(PRODUCT_EVENT_MAX_RECORDS);
+    return records.filter((record) => !record.owner_pubkey).slice(0, limit);
   }
 
   /**
@@ -138,7 +140,11 @@ export class ProductEventQueue {
   }
 
   async markFailed(records: ProductEventQueueRecord[]): Promise<void> {
-    await Promise.all(records.map((record) => {
+    // A record deleted while its send was outstanding (account switch, logout,
+    // consent withdrawal) must stay deleted. Only re-queue records that still
+    // exist, so a failed in-flight send cannot resurrect purged events.
+    const live = new Set((await this.getAllRecords()).map((record) => record.id));
+    await Promise.all(records.filter((record) => live.has(record.id)).map((record) => {
       const attemptCount = record.attempt_count + 1;
       const failedRecord: ProductEventQueueRecord = {
         ...record,
@@ -148,11 +154,6 @@ export class ProductEventQueue {
       };
       return this.putRecord(failedRecord);
     }));
-  }
-
-  async getDeadLetters(): Promise<ProductEventQueueRecord[]> {
-    const records = await this.prune(await this.getAllRecords());
-    return records.filter((record) => record.status === 'dead');
   }
 
   async clear(): Promise<void> {
@@ -202,6 +203,8 @@ export class ProductEventQueue {
       };
       request.onupgradeneeded = () => {
         const db = request.result;
+        // Version 1 used the incompatible pre-contract payload. Discarding it
+        // prevents those records from crossing the version 2 privacy boundary.
         if (db.objectStoreNames.contains(STORE_NAME)) {
           db.deleteObjectStore(STORE_NAME);
         }
@@ -254,8 +257,15 @@ export class ProductEventQueue {
         request.onsuccess = () => {
           const records = (request.result as ProductEventQueueRecord[])
             .filter((record) => !this.deletedRecordIds.has(record.id));
-          records.forEach((record) => this.memoryRecords.set(record.id, record));
-          resolve(records);
+          const available = new Map(
+            Array.from(this.memoryRecords.entries())
+              .filter(([id]) => !this.deletedRecordIds.has(id)),
+          );
+          // Durable records win when both stores have the same event, while
+          // memory-only records survive quota or transaction failures.
+          records.forEach((record) => available.set(record.id, record));
+          available.forEach((record, id) => this.memoryRecords.set(id, record));
+          resolve(Array.from(available.values()));
         };
         request.onerror = () => resolve(Array.from(this.memoryRecords.values()));
       } catch {

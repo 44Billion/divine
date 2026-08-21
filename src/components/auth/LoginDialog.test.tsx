@@ -21,6 +21,7 @@ const {
   mockBuildSignupRedirect,
   mockGetStoredLocalNsecLogin,
   mockLoginActions,
+  mockTrackProductEvent,
   mockUseProtectedMinorStatus,
 } = vi.hoisted(() => ({
   mockBuildLoginRedirect: vi.fn(),
@@ -31,12 +32,21 @@ const {
     extension: vi.fn(),
     nsec: vi.fn(),
   },
+  mockTrackProductEvent: vi.fn().mockResolvedValue('event-id'),
   mockUseProtectedMinorStatus: vi.fn(),
 }));
 
 const originalLocation = window.location;
 const locationAssign = vi.fn();
 const fetchMock = vi.fn<typeof fetch>();
+
+vi.mock('@/lib/analyticsClient', () => ({
+  getProductAnalyticsUtm: () => ({
+    utm_source: 'newsletter',
+    utm_medium: 'email',
+  }),
+  trackProductEvent: mockTrackProductEvent,
+}));
 
 vi.mock('@/lib/divineLogin', async () => {
   const actual = await vi.importActual<typeof import('@/lib/divineLogin')>('@/lib/divineLogin');
@@ -108,20 +118,77 @@ describe('LoginDialog', () => {
     });
   });
 
-  it('renders explicit register and sign-in tabs with register selected by default', async () => {
+  it('defaults to sign-in without recording registration', async () => {
     render(<LoginDialog isOpen onClose={vi.fn()} onLogin={vi.fn()} />);
 
-    expect(await screen.findByRole('tab', { name: /^Register$/i })).toHaveAttribute('data-state', 'active');
-    expect(screen.getByRole('tab', { name: /^Sign in$/i })).toBeInTheDocument();
-    expect(screen.getByText(/Set up your Divine account\./i)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /^Create account$/i })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /I already have an account/i })).not.toBeInTheDocument();
+    expect(await screen.findByRole('tab', { name: /^Sign in$/i })).toHaveAttribute('data-state', 'active');
+    expect(mockTrackProductEvent).not.toHaveBeenCalled();
   });
 
+  it('records registration entry once when the registration tab opens', async () => {
+    const { rerender } = render(
+      <LoginDialog initialTab="register" isOpen onClose={vi.fn()} onLogin={vi.fn()} />,
+    );
+
+    await waitFor(() => {
+      expect(mockTrackProductEvent).toHaveBeenCalledWith('registration_started', {
+        entry_point: 'landing',
+        utm_source: 'newsletter',
+        utm_medium: 'email',
+      });
+    });
+
+    rerender(<LoginDialog initialTab="register" isOpen onClose={vi.fn()} onLogin={vi.fn()} />);
+    expect(mockTrackProductEvent).toHaveBeenCalledTimes(1);
+  });
+  it('does not record registration until a sign-in visitor chooses Register', async () => {
+    const user = userEvent.setup();
+
+    render(
+      <LoginDialog
+        initialTab="signin"
+        isOpen
+        onClose={vi.fn()}
+        onLogin={vi.fn()}
+      />,
+    );
+
+    expect(await screen.findByRole('tab', { name: /^Sign in$/i })).toHaveAttribute(
+      'data-state',
+      'active',
+    );
+    expect(mockTrackProductEvent).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole('tab', { name: /^Register$/i }));
+
+    await waitFor(() => {
+      expect(mockTrackProductEvent).toHaveBeenCalledWith(
+        'registration_started',
+        expect.objectContaining({ entry_point: 'landing' }),
+      );
+    });
+  });
+  it('does not mislabel registration opened from an app route as a landing', async () => {
+    Object.defineProperty(window, 'location', {
+      value: { ...originalLocation, assign: locationAssign, pathname: '/profile/npub1example', search: '' },
+      writable: true,
+      configurable: true,
+    });
+
+    render(<LoginDialog initialTab="register" isOpen onClose={vi.fn()} onLogin={vi.fn()} />);
+
+    await waitFor(() => {
+      expect(mockTrackProductEvent).toHaveBeenCalledWith('registration_started', {
+        entry_point: 'unknown',
+        utm_source: 'newsletter',
+        utm_medium: 'email',
+      });
+    });
+  });
   it('renders hosted sign-in and keeps Nostr methods behind a text disclosure', async () => {
     const user = userEvent.setup();
 
-    render(<LoginDialog isOpen onClose={vi.fn()} onLogin={vi.fn()} />);
+    render(<LoginDialog initialTab="register" isOpen onClose={vi.fn()} onLogin={vi.fn()} />);
 
     await user.click(await screen.findByRole('tab', { name: /^Sign in$/i }));
 
@@ -547,7 +614,7 @@ describe('LoginDialog', () => {
       configurable: true,
     });
 
-    render(<LoginDialog isOpen onClose={vi.fn()} onLogin={vi.fn()} />);
+    render(<LoginDialog initialTab="register" isOpen onClose={vi.fn()} onLogin={vi.fn()} />);
 
     await user.click(await screen.findByRole('button', { name: /^Create account$/i }));
 
@@ -561,7 +628,7 @@ describe('LoginDialog', () => {
     const user = userEvent.setup();
     mockBuildSignupRedirect.mockRejectedValue(undefined);
 
-    render(<LoginDialog isOpen onClose={vi.fn()} onLogin={vi.fn()} />);
+    render(<LoginDialog initialTab="register" isOpen onClose={vi.fn()} onLogin={vi.fn()} />);
 
     await user.click(await screen.findByRole('button', { name: /^Create account$/i }));
 
@@ -569,12 +636,16 @@ describe('LoginDialog', () => {
   });
 
   it('renders both auth tabs immediately without contacting the invite service', async () => {
+    const user = userEvent.setup();
     render(<LoginDialog isOpen onClose={vi.fn()} onLogin={vi.fn()} />);
 
-    expect(await screen.findByRole('button', { name: /^Create account$/i })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: /^Register$/i })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: /^Sign in$/i })).toBeInTheDocument();
+    const registerTab = await screen.findByRole('tab', { name: /^Register$/i });
+    expect(screen.getByRole('tab', { name: /^Sign in$/i })).toHaveAttribute('data-state', 'active');
     expect(screen.queryByText(/Checking invite status/i)).not.toBeInTheDocument();
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    await user.click(registerTab);
+    expect(await screen.findByRole('button', { name: /^Create account$/i })).toBeInTheDocument();
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });

@@ -243,6 +243,45 @@ and update the lock from that manifest.
 `scripts/check-analytics-contract.test.mjs` runs the same check under
 `npm run test`.
 
+Product analytics remains off in normal production and preview builds. An
+operator can use the existing Funnelcake API setting to select staging on a
+`*.pages.dev` preview; that explicit combination turns product analytics on for
+the staging test without reserving a `*.divine.video` hostname. Selecting
+staging on a Divine user-facing domain does not turn collection on.
+
+The web app currently produces five of the seven version-two events:
+`landing_viewed`, `registration_started`, `navigation_context_recorded`,
+`content_impression_recorded`, and `playback_session_recorded`. It does not
+produce `onboarding_step_recorded` because web registration hands off to the
+hosted login service, which owns onboarding, and it does not produce
+`experiment_exposure` because the web app has no experiment assignment system
+or exposure point yet.
+
+`registration_started` means that the person deliberately reached the
+registration surface: an explicit signup link may open it directly, or a
+person in the sign-in dialog may choose the Register tab. Merely opening a
+sign-in prompt does not count. For `content_impression_recorded`, `visible_ms`
+is the uninterrupted visible time that qualified the impression (normally
+about 1,000 ms on both web and mobile), not the video's total visible dwell
+time. Playback dwell is recorded separately by `playback_session_recorded`.
+
+Anonymous acquisition events use the anonymous endpoint. User activity uses a
+NIP-98-signed request whose body and signature identify the account to
+Funnelcake, even though the event itself has no public-key field. The browser
+install and session identifiers are both replaced, and the pending queue is
+cleared, on login, logout, account switch, or analytics-consent withdrawal.
+This deliberately prevents Funnelcake from joining pre-login activity or two
+accounts through a shared browser identifier. Re-consent starts a new browser
+and session identity.
+
+The browser queue is bounded and best effort. IndexedDB is preferred, with an
+in-memory copy retained when a write fails. A permanent rejection of a
+multi-event request is retried one event at a time so a malformed event cannot
+delete valid neighbors. Numeric producer values are clamped to the shared
+contract ranges before hashing and enqueueing. The contract lock also pins the
+cross-language event-ID fixture, so its canonicalization vectors cannot drift
+independently of the generated schema.
+
 ### Relay Routing
 
 [`src/lib/relayRouting.ts`](./src/lib/relayRouting.ts) defines the

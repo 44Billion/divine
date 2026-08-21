@@ -8,6 +8,7 @@ import { Collapsible, CollapsibleContent } from '@/components/ui/collapsible';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { getProductAnalyticsUtm, trackProductEvent } from '@/lib/analyticsClient';
 import { buildLoginRedirect, buildSignupRedirect } from '@/lib/divineLogin';
 import { getStoredLocalNsecLogin } from '@/lib/localNsecAccount';
 import { isMinorKeyHandoverRestricted } from '@/lib/protectedMinor';
@@ -19,6 +20,7 @@ import LocalNsecBanner from './LocalNsecBanner';
 import WebAccountSignInForm from './WebAccountSignInForm';
 
 interface LoginDialogProps {
+  initialTab?: AuthTab;
   isOpen: boolean;
   onClose: () => void;
   onLogin: () => void;
@@ -39,7 +41,7 @@ const getChallengeHost = (url: string): string | null => {
   }
 };
 
-const LoginDialog: React.FC<LoginDialogProps> = ({ isOpen, onClose, onLogin }) => {
+const LoginDialog: React.FC<LoginDialogProps> = ({ initialTab = 'signin', isOpen, onClose, onLogin }) => {
   const { t } = useTranslation();
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [bunkerError, setBunkerError] = useState<string | null>(null);
@@ -51,8 +53,9 @@ const LoginDialog: React.FC<LoginDialogProps> = ({ isOpen, onClose, onLogin }) =
   const [keyError, setKeyError] = useState<string | null>(null);
   const [nsec, setNsec] = useState('');
   const [storedLocalNsec, setStoredLocalNsec] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<AuthTab>('register');
+  const [activeTab, setActiveTab] = useState<AuthTab>(initialTab);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const registrationRecordedRef = useRef(false);
   const login = useLoginActions();
   const { state: protectedMinorState } = useProtectedMinorStatus();
   // #182: while a protected-minor session is active (or its status is still
@@ -79,6 +82,30 @@ const LoginDialog: React.FC<LoginDialogProps> = ({ isOpen, onClose, onLogin }) =
     isOpenRef.current = isOpen;
   }, [isOpen]);
   keyHandoverRestrictedRef.current = keyHandoverRestricted;
+
+  const recordRegistrationStarted = () => {
+    if (registrationRecordedRef.current) return;
+
+    registrationRecordedRef.current = true;
+    const pathname = window.location.pathname;
+    const entryPoint = pathname.startsWith('/invite')
+      ? 'invite'
+      : pathname === '/'
+        ? 'landing'
+        : 'unknown';
+    void trackProductEvent('registration_started', {
+      entry_point: entryPoint,
+      ...getProductAnalyticsUtm(),
+    });
+  };
+
+  useEffect(() => {
+    if (!isOpen) {
+      registrationRecordedRef.current = false;
+      return;
+    }
+    if (initialTab === 'register') recordRegistrationStarted();
+  }, [initialTab, isOpen]);
 
   // The render-side gates below stay closed synchronously; this only clears the
   // stale toggle state so the disclosure doesn't pop back open unprompted if
@@ -111,8 +138,8 @@ const LoginDialog: React.FC<LoginDialogProps> = ({ isOpen, onClose, onLogin }) =
     setKeyError(null);
     setNsec('');
     setStoredLocalNsec(getStoredLocalNsecLogin()?.data.nsec ?? null);
-    setActiveTab('register');
-  }, [isOpen]);
+    setActiveTab(initialTab);
+  }, [initialTab, isOpen]);
 
   const handleExtensionLogin = async () => {
     if (keyHandoverRestrictedRef.current) return;
@@ -289,6 +316,7 @@ const LoginDialog: React.FC<LoginDialogProps> = ({ isOpen, onClose, onLogin }) =
   const handleAuthTabChange = (value: string) => {
     const nextTab = value === 'signin' ? 'signin' : 'register';
     setActiveTab(nextTab);
+    if (nextTab === 'register') recordRegistrationStarted();
     setGeneralError(null);
 
     if (nextTab !== 'signin') {
