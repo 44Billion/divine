@@ -18,6 +18,19 @@ const STALE_MOBILE_COPY = [
   'currently in <strong>beta testing</strong>',
   'Join the Beta',
 ];
+const NEWSLETTER_SURFACES = [
+  // The blurb itself lives here; the two components below only render it, so
+  // this is the file the guard actually has to watch.
+  'src/lib/constants/mailingListCopy.ts',
+  'src/components/AppFooter.tsx',
+  'src/components/family/StoreBadgesCta.tsx',
+];
+const STALE_INVITE_COPY = [
+  'with invite codes',
+  'receive a code',
+  'request a code',
+  'invite code',
+];
 
 function readSource(path: string) {
   return readFileSync(resolve(REPO_ROOT, path), 'utf8');
@@ -42,6 +55,14 @@ describe('mobile app availability copy', () => {
     expect(source).toContain(PLAY_STORE_URL);
 
     for (const staleCopy of STALE_MOBILE_COPY) {
+      expect(source).not.toContain(staleCopy);
+    }
+  });
+
+  it.each(NEWSLETTER_SURFACES)('%s does not promise invite codes through the newsletter', (file) => {
+    const source = readSource(file).toLowerCase();
+
+    for (const staleCopy of STALE_INVITE_COPY) {
       expect(source).not.toContain(staleCopy);
     }
   });
