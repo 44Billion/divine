@@ -93,9 +93,43 @@ describe("publishArchiveEvents", () => {
       relayFactory: () => relay,
     });
     expect(relay.published.map((event) => event.kind)).toEqual([34236, 1111, 1111]);
+    expect(relay.published[0].created_at).toBe(video.created_at + 1);
+    expect(relay.published[1].created_at).toBe(comment.created_at);
+    expect(relay.published[2].created_at).toBe(reply.created_at);
     expect(relay.published[1].tags).toEqual([["E", relay.published[0].id], ["e", relay.published[0].id]]);
     expect(relay.published[2].tags).toEqual([["E", relay.published[0].id], ["e", relay.published[1].id]]);
     expect(results.every((result) => result.status === "published")).toBe(true);
+  });
+
+  it("produces the same replacement templates on repeated runs", async () => {
+    const signer = makeSigner();
+    const video = makeEvent("1", { kind: 34236, content: SOURCE, tags: [["url", SOURCE]] });
+    const firstRelay = fakeRelay();
+    const secondRelay = fakeRelay();
+    await publishArchiveEvents({ destination: RELAY, events: [video], mirrorResults: [mirrorResult()], signer, relayFactory: () => firstRelay });
+    await publishArchiveEvents({ destination: RELAY, events: [video], mirrorResults: [mirrorResult()], signer, relayFactory: () => secondRelay });
+
+    expect(signer.signEvent).toHaveBeenNthCalledWith(2, signer.signEvent.mock.calls[0][0]);
+    expect(secondRelay.published[0]).toMatchObject({
+      kind: firstRelay.published[0].kind,
+      created_at: firstRelay.published[0].created_at,
+      content: firstRelay.published[0].content,
+      tags: firstRelay.published[0].tags,
+    });
+  });
+
+  it("advances an addressable event changed only by reference rewriting", async () => {
+    const signer = makeSigner();
+    const relay = fakeRelay();
+    const video = makeEvent("1", { kind: 34236, content: SOURCE, tags: [["d", "vid"], ["url", SOURCE]] });
+    // A curation set carries no media of its own, so only the rewritten `e` tag
+    // changes it — and it still has to beat the copy that points at Divine.
+    const playlist = makeEvent("3", { kind: 30_005, created_at: 1_700_000_900, content: "", tags: [["d", "list"], ["e", video.id]] });
+
+    await publishArchiveEvents({ destination: RELAY, events: [video, playlist], mirrorResults: [mirrorResult()], signer, relayFactory: () => relay });
+
+    expect(relay.published[1].created_at).toBe(playlist.created_at + 1);
+    expect(relay.published[1].tags).toContainEqual(["e", relay.published[0].id]);
   });
 
   it("replaces serialized repost content with the newly signed referenced event", async () => {
@@ -260,6 +294,33 @@ describe("publishArchiveEvents", () => {
     const results = await publishArchiveEvents({ destination: RELAY, events: [changed, unchanged], mirrorResults: [mirrorResult()], signer, relayFactory: () => relay });
     expect(results.find((result) => result.event_id === changed.id)).toMatchObject({ status: "failed", reason: expect.stringContaining("signer refused") });
     expect(relay.published).toEqual([unchanged]);
+  });
+
+  it("rejects a replacement when the signer changes its timestamp", async () => {
+    const signer = makeSigner();
+    signer.signEvent.mockImplementationOnce(async (template) => ({
+      ...template,
+      created_at: template.created_at - 1,
+      id: "f".repeat(64),
+      pubkey: PUBKEY,
+      sig: "f".repeat(128),
+    }));
+    const relay = fakeRelay();
+    const changed = makeEvent("1", { kind: 34236, content: SOURCE, tags: [["url", SOURCE]] });
+
+    const results = await publishArchiveEvents({
+      destination: RELAY,
+      events: [changed],
+      mirrorResults: [mirrorResult()],
+      signer,
+      relayFactory: () => relay,
+    });
+
+    expect(results[0]).toMatchObject({
+      status: "failed",
+      reason: expect.stringContaining("signer changed this event's timestamp"),
+    });
+    expect(relay.event).not.toHaveBeenCalled();
   });
 });
 
