@@ -29,11 +29,11 @@ const signer = {
 } as unknown as NostrSigner;
 
 describe("DiscoveryPointerForm", () => {
-  const publish = vi.fn();
-
   beforeEach(() => {
-    publish.mockReset().mockResolvedValue({ status: "accepted" });
-    vi.mocked(openDestinationRelay).mockReturnValue({ publish, close: vi.fn().mockResolvedValue(undefined) });
+    vi.mocked(openDestinationRelay).mockReset().mockImplementation(() => ({
+      publish: vi.fn().mockResolvedValue({ status: "accepted" }),
+      close: vi.fn().mockResolvedValue(undefined),
+    }));
   });
 
   function renderForm() {
@@ -49,22 +49,58 @@ describe("DiscoveryPointerForm", () => {
 
   it("reports each pointer and confirms automatic discovery after both succeed", async () => {
     renderForm();
+    expect(screen.getByText(/same signed pointers to Divine and public metadata relays/)).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Publish destination pointers" }));
 
-    expect(await screen.findByText("Relay list: published")).toBeInTheDocument();
-    expect(screen.getByText("Blossom server list: published")).toBeInTheDocument();
-    expect(screen.getByText("Compatible third-party clients that check your destination relay should now find your new home automatically.")).toBeInTheDocument();
+    expect(await screen.findByText("Relay list — published to 3 of 3 places apps look.")).toBeInTheDocument();
+    expect(screen.getByText("Blossom server list — published to 3 of 3 places apps look.")).toBeInTheDocument();
+    expect(screen.getByText("Other apps can now find your new home through public discovery relays.")).toBeInTheDocument();
   });
 
-  it("keeps a failed pointer separate from a successful one", async () => {
-    publish
-      .mockResolvedValueOnce({ status: "failed", code: "blocked", message: "The relay blocked this event." })
-      .mockResolvedValueOnce({ status: "accepted" });
+  it("names a failed relay while accepting partial discovery", async () => {
+    vi.mocked(openDestinationRelay).mockImplementation(({ destination }) => ({
+      publish: vi.fn().mockResolvedValue(destination === "wss://relay.damus.io/"
+        ? { status: "failed", code: "blocked", message: "The relay blocked this event." }
+        : { status: "accepted" }),
+      close: vi.fn().mockResolvedValue(undefined),
+    }));
     renderForm();
     await userEvent.click(screen.getByRole("button", { name: "Publish destination pointers" }));
 
-    expect(await screen.findByText("Relay list: not published")).toBeInTheDocument();
-    expect(screen.getByText("Blossom server list: published")).toBeInTheDocument();
-    expect(screen.getByText(/Fix the failed pointer before relying on automatic discovery/)).toBeInTheDocument();
+    expect(await screen.findByText("Relay list — published to 2 of 3 places apps look.")).toBeInTheDocument();
+    expect(screen.getAllByText(/wss:\/\/relay\.damus\.io\/: The relay blocked this event\./)).toHaveLength(2);
+    expect(screen.getByText("Other apps can now find your new home through public discovery relays.")).toBeInTheDocument();
+  });
+
+  it("does not claim discovery when only the destination accepts pointers", async () => {
+    vi.mocked(openDestinationRelay).mockImplementation(({ destination }) => ({
+      publish: vi.fn().mockResolvedValue(destination === "wss://relay.example/"
+        ? { status: "accepted" }
+        : { status: "failed", code: "blocked", message: "The relay blocked this event." }),
+      close: vi.fn().mockResolvedValue(undefined),
+    }));
+    renderForm();
+    await userEvent.click(screen.getByRole("button", { name: "Publish destination pointers" }));
+
+    expect(await screen.findByText("Relay list — only published to your destination.")).toBeInTheDocument();
+    expect(screen.getByText("Blossom server list — only published to your destination.")).toBeInTheDocument();
+    expect(screen.getByText(/At least one pointer is not discoverable yet/)).toBeInTheDocument();
+  });
+
+  it("does not call a pointer discoverable when only Divine's own relay accepts it", async () => {
+    vi.mocked(openDestinationRelay).mockImplementation(({ destination }) => ({
+      publish: vi.fn().mockResolvedValue(
+        destination === "wss://relay.example/" || destination === "wss://relay.divine.video/"
+          ? { status: "accepted" }
+          : { status: "failed", code: "blocked", message: "The relay blocked this event." },
+      ),
+      close: vi.fn().mockResolvedValue(undefined),
+    }));
+    renderForm();
+    await userEvent.click(screen.getByRole("button", { name: "Publish destination pointers" }));
+
+    expect(await screen.findByText("Relay list — only published to your destination.")).toBeInTheDocument();
+    expect(screen.getByText(/At least one pointer is not discoverable yet/)).toBeInTheDocument();
+    expect(screen.queryByText("Other apps can now find your new home through public discovery relays.")).toBeNull();
   });
 });
