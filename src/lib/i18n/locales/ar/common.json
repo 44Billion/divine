@@ -1643,5 +1643,13 @@
     "deletedDescription": "تمت إزالة «{{name}}».",
     "deleteFailedTitle": "فشل الحذف.",
     "deleteFailedDescription": "تعثّر حذف قائمة الأشخاص. نجرب مرة أخرى؟"
+  },
+  "userList": {
+    "searchPlaceholder": "ابحث بالاسم",
+    "noMatches": "لا أحد هنا يطابق ذلك. جرّب اسمًا آخر؟",
+    "searchHint": "اكتب حرفين أو رقمين على الأقل.",
+    "searchUnavailable": "تعذّر البحث الآن. نحاول مرة أخرى؟",
+    "noFollowers": "لا متابعين بعد.",
+    "noFollowing": "لا يتابع أحدًا بعد."
   }
 }

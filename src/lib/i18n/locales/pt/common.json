@@ -1555,5 +1555,13 @@
     "deletedDescription": "“{{name}}” foi removida.",
     "deleteFailedTitle": "Falha ao excluir.",
     "deleteFailedDescription": "A exclusão da lista de pessoas travou. Tentar de novo?"
+  },
+  "userList": {
+    "searchPlaceholder": "Buscar por nome",
+    "noMatches": "Ninguém aqui corresponde. Tenta outro nome?",
+    "searchHint": "Digite pelo menos 2 letras ou números.",
+    "searchUnavailable": "Não foi possível buscar agora. Tentar de novo?",
+    "noFollowers": "Ainda não há seguidores.",
+    "noFollowing": "Ainda não segue ninguém."
   }
 }

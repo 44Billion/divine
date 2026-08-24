@@ -1547,5 +1547,13 @@
     "deletedDescription": "”{{name}}” har tagits bort.",
     "deleteFailedTitle": "Raderingen misslyckades.",
     "deleteFailedDescription": "Det hakade upp sig när personlistan skulle raderas. Försöka igen?"
+  },
+  "userList": {
+    "searchPlaceholder": "Sök på namn",
+    "noMatches": "Ingen här matchar. Testa ett annat namn?",
+    "searchHint": "Skriv minst 2 bokstäver eller siffror.",
+    "searchUnavailable": "Det gick inte att söka nu. Försöka igen?",
+    "noFollowers": "Inga följare än.",
+    "noFollowing": "Följer ingen än."
   }
 }

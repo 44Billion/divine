@@ -1547,5 +1547,13 @@
     "deletedDescription": "«{{name}}» ہٹا دی گئی۔",
     "deleteFailedTitle": "حذف نہیں ہو سکی۔",
     "deleteFailedDescription": "لوگوں کی فہرست حذف کرتے ہوئے رکاوٹ آئی۔ دوبارہ کوشش کریں؟"
+  },
+  "userList": {
+    "searchPlaceholder": "نام سے تلاش کریں",
+    "noMatches": "یہاں کوئی مماثل نہیں۔ کوئی اور نام آزمائیں؟",
+    "searchHint": "کم از کم 2 حروف یا اعداد لکھیں۔",
+    "searchUnavailable": "ابھی تلاش نہیں ہو سکی۔ دوبارہ کوشش کریں؟",
+    "noFollowers": "ابھی کوئی فالوور نہیں۔",
+    "noFollowing": "ابھی کسی کو فالو نہیں کیا۔"
   }
 }

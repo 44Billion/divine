@@ -1547,5 +1547,13 @@
     "deletedDescription": "「{{name}}」を削除しました。",
     "deleteFailedTitle": "削除できませんでした。",
     "deleteFailedDescription": "ピープルリストの削除でつまずきました。もう一度試す？"
+  },
+  "userList": {
+    "searchPlaceholder": "名前で検索",
+    "noMatches": "一致する人はいません。別の名前で試しますか？",
+    "searchHint": "文字または数字を2文字以上入力してください。",
+    "searchUnavailable": "今は検索できません。もう一度試しますか？",
+    "noFollowers": "フォロワーはまだいません。",
+    "noFollowing": "まだ誰もフォローしていません。"
   }
 }

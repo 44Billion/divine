@@ -1547,5 +1547,13 @@
     "deletedDescription": "“{{name}}” telah dibuang.",
     "deleteFailedTitle": "Gagal memadam.",
     "deleteFailedDescription": "Pemadaman senarai orang tersekat. Cuba lagi?"
+  },
+  "userList": {
+    "searchPlaceholder": "Cari mengikut nama",
+    "noMatches": "Tiada sesiapa sepadan di sini. Cuba nama lain?",
+    "searchHint": "Taip sekurang-kurangnya 2 huruf atau nombor.",
+    "searchUnavailable": "Carian tidak dapat dibuat sekarang. Cuba lagi?",
+    "noFollowers": "Belum ada pengikut.",
+    "noFollowing": "Belum mengikuti sesiapa."
   }
 }

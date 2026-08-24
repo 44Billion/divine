@@ -1555,5 +1555,13 @@
     "deletedDescription": "„{{name}}” a fost eliminată.",
     "deleteFailedTitle": "Ștergerea a eșuat.",
     "deleteFailedDescription": "Ștergerea listei de persoane s-a poticnit. Mai încerci?"
+  },
+  "userList": {
+    "searchPlaceholder": "Caută după nume",
+    "noMatches": "Nimeni de aici nu se potrivește. Încerci alt nume?",
+    "searchHint": "Scrie cel puțin 2 litere sau cifre.",
+    "searchUnavailable": "Căutarea nu merge acum. Mai încerci?",
+    "noFollowers": "Încă nu sunt urmăritori.",
+    "noFollowing": "Încă nu urmărește pe nimeni."
   }
 }

@@ -1547,5 +1547,13 @@
     "deletedDescription": "„{{name}}“ wurde entfernt.",
     "deleteFailedTitle": "Löschen fehlgeschlagen.",
     "deleteFailedDescription": "Beim Löschen der Personenliste hat es gehakt. Nochmal?"
+  },
+  "userList": {
+    "searchPlaceholder": "Nach Namen suchen",
+    "noMatches": "Hier passt niemand dazu. Anderen Namen versuchen?",
+    "searchHint": "Gib mindestens 2 Buchstaben oder Zahlen ein.",
+    "searchUnavailable": "Die Suche klappt gerade nicht. Noch mal versuchen?",
+    "noFollowers": "Noch keine Follower.",
+    "noFollowing": "Folgt noch niemandem."
   }
 }

@@ -1100,8 +1100,19 @@ export interface FunnelcakeBulkStatsResponse {
 }
 
 /**
+ * The server rejects a larger batch with `400 Maximum 100 pubkeys allowed`,
+ * and that 400 records a circuit-breaker failure, so an oversized call does not
+ * merely fail — three of them take the whole app off Funnelcake for 30 seconds.
+ */
+const BULK_USERS_MAX_PUBKEYS = 100;
+const BULK_USERS_MAX_CONCURRENCY = 3;
+
+/**
  * Fetch multiple user profiles in bulk via POST /api/users/bulk
  * Much more efficient than individual requests for feeds and lists
+ *
+ * Requests over the server's per-call cap are split into chunks and merged, so
+ * callers can pass a whole follow list without knowing the limit.
  *
  * @param apiUrl - Base URL of the Funnelcake API
  * @param pubkeys - Array of user public keys (hex)
@@ -1116,6 +1127,34 @@ export async function fetchBulkUsers(
   // Return early for empty input
   if (pubkeys.length === 0) {
     return { users: [], missing: [] };
+  }
+
+  if (pubkeys.length > BULK_USERS_MAX_PUBKEYS) {
+    const chunks: string[][] = [];
+    for (let index = 0; index < pubkeys.length; index += BULK_USERS_MAX_PUBKEYS) {
+      chunks.push(pubkeys.slice(index, index + BULK_USERS_MAX_PUBKEYS));
+    }
+
+    debugLog(`[FunnelcakeClient] fetchBulkUsers: ${pubkeys.length} pubkeys in ${chunks.length} chunks`);
+
+    const responses: FunnelcakeBulkUsersResponse[] = new Array(chunks.length);
+    let nextChunk = 0;
+    const workers = Array.from(
+      { length: Math.min(BULK_USERS_MAX_CONCURRENCY, chunks.length) },
+      async () => {
+        while (nextChunk < chunks.length) {
+          const chunkIndex = nextChunk;
+          nextChunk += 1;
+          responses[chunkIndex] = await fetchBulkUsers(apiUrl, chunks[chunkIndex], signal);
+        }
+      },
+    );
+    await Promise.all(workers);
+
+    return {
+      users: responses.flatMap((response) => response.users),
+      missing: responses.flatMap((response) => response.missing),
+    };
   }
 
   debugLog(`[FunnelcakeClient] fetchBulkUsers: ${pubkeys.length} pubkeys`);

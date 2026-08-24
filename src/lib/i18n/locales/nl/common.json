@@ -1547,5 +1547,13 @@
     "deletedDescription": "‘{{name}}’ is verwijderd.",
     "deleteFailedTitle": "Verwijderen mislukt.",
     "deleteFailedDescription": "Het verwijderen van de personenlijst liep vast. Opnieuw?"
+  },
+  "userList": {
+    "searchPlaceholder": "Zoeken op naam",
+    "noMatches": "Niemand hier komt overeen. Een andere naam proberen?",
+    "searchHint": "Typ minstens 2 letters of cijfers.",
+    "searchUnavailable": "Zoeken lukt nu niet. Opnieuw proberen?",
+    "noFollowers": "Nog geen volgers.",
+    "noFollowing": "Volgt nog niemand."
   }
 }

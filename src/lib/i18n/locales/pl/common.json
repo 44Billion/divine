@@ -1563,5 +1563,13 @@
     "deletedDescription": "„{{name}}” została usunięta.",
     "deleteFailedTitle": "Nie udało się usunąć.",
     "deleteFailedDescription": "Usuwanie listy osób się zacięło. Spróbujesz jeszcze raz?"
+  },
+  "userList": {
+    "searchPlaceholder": "Szukaj po nazwie",
+    "noMatches": "Nikt tu nie pasuje. Spróbuj innej nazwy?",
+    "searchHint": "Wpisz co najmniej 2 litery lub cyfry.",
+    "searchUnavailable": "Wyszukiwanie teraz nie działa. Spróbować ponownie?",
+    "noFollowers": "Brak obserwujących.",
+    "noFollowing": "Jeszcze nikogo nie obserwuje."
   }
 }
