@@ -152,21 +152,36 @@ export const VideoPlayer = forwardRef<HTMLVideoElement, VideoPlayerProps>(
     // Mobile-specific state
     const [touchState, setTouchState] = useState<TouchState | null>(null);
     const [lastTapTime, setLastTapTime] = useState(0);
-    const [longPressTimer, setLongPressTimer] = useState<NodeJS.Timeout | null>(null);
+    const longPressTimerRef = useRef<NodeJS.Timeout | null>(null);
 
     const resolvedPlaybackId = playbackId ?? videoId;
-    const { activeVideoId, registerVideo, unregisterVideo, updateVideoVisibility, globalMuted } = useVideoPlayback();
+    const {
+      activeVideoId,
+      globalMuted,
+      registerVideo,
+      setUserPaused,
+      unregisterVideo,
+      updateVideoVisibility,
+      userPausedVideoId,
+    } = useVideoPlayback();
     const isActive = activeVideoId === resolvedPlaybackId;
+    const isUserPaused = userPausedVideoId === resolvedPlaybackId;
+    const shouldBePlayingRef = useRef(isActive && !isUserPaused && !hasError);
+    shouldBePlayingRef.current = isActive && !isUserPaused && !hasError;
 
     // Store context functions in refs to avoid unstable dependencies in setRefs callback
     // This prevents infinite loops when context functions change reference
     const registerVideoRef = useRef(registerVideo);
     const unregisterVideoRef = useRef(unregisterVideo);
+    const updateVideoVisibilityRef = useRef(updateVideoVisibility);
+    const resolvedPlaybackIdRef = useRef(resolvedPlaybackId);
     const globalMutedRef = useRef(globalMuted);
 
     // Keep refs updated with latest values
     registerVideoRef.current = registerVideo;
     unregisterVideoRef.current = unregisterVideo;
+    updateVideoVisibilityRef.current = updateVideoVisibility;
+    resolvedPlaybackIdRef.current = resolvedPlaybackId;
     globalMutedRef.current = globalMuted;
 
     // Get responsive layout class
@@ -270,11 +285,11 @@ export const VideoPlayer = forwardRef<HTMLVideoElement, VideoPlayerProps>(
     // Update playing state based on active status and control video playback
     useEffect(() => {
       verboseLog(`[VideoPlayer ${videoId}] Active status changed: ${isActive}`);
-      setIsPlaying(isActive);
+      setIsPlaying(isActive && !isUserPaused);
 
       // Actually control the video element
       if (videoRef.current) {
-        if (isActive && !hasError) {
+        if (isActive && !isUserPaused && !hasError) {
           verboseLog(`[VideoPlayer ${videoId}] Starting playback`);
           // Ensure video is not already playing before calling play()
           if (videoRef.current.paused) {
@@ -293,13 +308,13 @@ export const VideoPlayer = forwardRef<HTMLVideoElement, VideoPlayerProps>(
           videoRef.current.currentTime = 0;
         }
       }
-    }, [isActive, videoId, hasError]);
+    }, [isActive, isUserPaused, videoId, hasError]);
 
     // Sync video muted state with global muted state
     useEffect(() => {
       if (videoRef.current) {
         const video = videoRef.current;
-        const shouldBePlayingCheck = isActive && !hasError;
+        const shouldBePlayingCheck = isActive && !isUserPaused && !hasError;
 
         verboseLog(`[VideoPlayer ${videoId}] Syncing muted state to: ${globalMuted}, isActive: ${isActive}, shouldBePlaying: ${shouldBePlayingCheck}`);
 
@@ -315,7 +330,7 @@ export const VideoPlayer = forwardRef<HTMLVideoElement, VideoPlayerProps>(
           requestAnimationFrame(() => {
             // Then use another one to ensure we're after any browser-triggered events
             requestAnimationFrame(() => {
-              if (video.paused) {
+              if (video.paused && shouldBePlayingRef.current) {
                 verboseLog(`[VideoPlayer ${videoId}] Video paused after mute change, resuming...`);
                 video.play().catch(error => {
                   verboseLog(`[VideoPlayer ${videoId}] Failed to resume after mute change:`, error);
@@ -335,7 +350,7 @@ export const VideoPlayer = forwardRef<HTMLVideoElement, VideoPlayerProps>(
           }, 100);
         }
       }
-    }, [globalMuted, videoId, isActive, hasError]);
+    }, [globalMuted, videoId, isActive, isUserPaused, hasError]);
 
     // Handle play/pause
     const togglePlay = useCallback(() => {
@@ -347,9 +362,11 @@ export const VideoPlayer = forwardRef<HTMLVideoElement, VideoPlayerProps>(
 
       if (isPlaying) {
         verboseLog(`[VideoPlayer ${videoId}] Pausing video`);
+        setUserPaused(resolvedPlaybackId, true);
         videoRef.current.pause();
       } else {
         verboseLog(`[VideoPlayer ${videoId}] Attempting to play video`);
+        setUserPaused(resolvedPlaybackId, false);
         videoRef.current.play().catch((error) => {
           debugError(`[VideoPlayer ${videoId}] Play failed:`, error);
           if (error.name === 'NotSupportedError') {
@@ -359,7 +376,7 @@ export const VideoPlayer = forwardRef<HTMLVideoElement, VideoPlayerProps>(
         });
       }
       setIsPlaying(!isPlaying);
-    }, [videoId, isPlaying]);
+    }, [videoId, isPlaying, resolvedPlaybackId, setUserPaused]);
 
 
 
@@ -382,8 +399,8 @@ export const VideoPlayer = forwardRef<HTMLVideoElement, VideoPlayerProps>(
       const currentTime = Date.now();
 
       // Clear any existing long press timer
-      if (longPressTimer) {
-        clearTimeout(longPressTimer);
+      if (longPressTimerRef.current) {
+        clearTimeout(longPressTimerRef.current);
       }
 
       // Set up touch state
@@ -399,9 +416,9 @@ export const VideoPlayer = forwardRef<HTMLVideoElement, VideoPlayerProps>(
       const timer = setTimeout(() => {
         onLongPress?.();
       }, 500);
-      setLongPressTimer(timer);
+      longPressTimerRef.current = timer;
 
-    }, [isMobile, longPressTimer, onLongPress]);
+    }, [isMobile, onLongPress]);
 
     const handleTouchMove = useCallback((e: React.TouchEvent) => {
       if (!isMobile || !touchState) return;
@@ -418,9 +435,9 @@ export const VideoPlayer = forwardRef<HTMLVideoElement, VideoPlayerProps>(
       const deltaY = touch.clientY - touchState.startY;
 
       // Clear long press timer on movement
-      if (longPressTimer) {
-        clearTimeout(longPressTimer);
-        setLongPressTimer(null);
+      if (longPressTimerRef.current) {
+        clearTimeout(longPressTimerRef.current);
+        longPressTimerRef.current = null;
       }
 
       // Handle pinch gesture
@@ -449,7 +466,7 @@ export const VideoPlayer = forwardRef<HTMLVideoElement, VideoPlayerProps>(
           onBrightnessGesture?.({ direction, delta: Math.abs(deltaY) });
         }
       }
-    }, [isMobile, touchState, longPressTimer, onPinch, onVolumeGesture, onBrightnessGesture]);
+    }, [isMobile, touchState, onPinch, onVolumeGesture, onBrightnessGesture]);
 
     const handleTouchEnd = useCallback((e: React.TouchEvent) => {
       if (!isMobile || !touchState) return;
@@ -459,18 +476,18 @@ export const VideoPlayer = forwardRef<HTMLVideoElement, VideoPlayerProps>(
       const isButton = target.closest('button');
       if (isButton) {
         // Clear any state and timers, but don't process any gestures
-        if (longPressTimer) {
-          clearTimeout(longPressTimer);
-          setLongPressTimer(null);
+        if (longPressTimerRef.current) {
+          clearTimeout(longPressTimerRef.current);
+          longPressTimerRef.current = null;
         }
         setTouchState(null);
         return; // Don't handle tap/swipe gestures if touching a button
       }
 
       // Clear long press timer
-      if (longPressTimer) {
-        clearTimeout(longPressTimer);
-        setLongPressTimer(null);
+      if (longPressTimerRef.current) {
+        clearTimeout(longPressTimerRef.current);
+        longPressTimerRef.current = null;
       }
 
       const currentTime = Date.now();
@@ -502,7 +519,7 @@ export const VideoPlayer = forwardRef<HTMLVideoElement, VideoPlayerProps>(
       }
 
       setTouchState(null);
-    }, [isMobile, touchState, longPressTimer, lastTapTime, togglePlay, onDoubleTap, onSwipeLeft, onSwipeRight]);
+    }, [isMobile, touchState, lastTapTime, togglePlay, onDoubleTap, onSwipeLeft, onSwipeRight]);
 
     // Track load timing
     const loadStartTime = useRef<number | null>(null);
@@ -566,7 +583,7 @@ export const VideoPlayer = forwardRef<HTMLVideoElement, VideoPlayerProps>(
       setHasLoadedOnce(true);
       setAuthDeniedAfterVerification(false);
 
-      if (isActive && !hasError && videoRef.current?.paused) {
+      if (isActive && !isUserPaused && !hasError && videoRef.current?.paused) {
         videoRef.current.play().catch((error) => {
           debugError(`[VideoPlayer ${videoId}] Failed to resume after load:`, error);
           if (error.name === 'NotSupportedError') {
@@ -988,9 +1005,9 @@ export const VideoPlayer = forwardRef<HTMLVideoElement, VideoPlayerProps>(
 
     // Cleanup on unmount
     useEffect(() => {
-      verboseLog(`[VideoPlayer ${videoId}] Component mounting`);
+      verboseLog(`[VideoPlayer ${resolvedPlaybackIdRef.current}] Component mounting`);
       return () => {
-        verboseLog(`[VideoPlayer ${videoId}] Component unmounting`);
+        verboseLog(`[VideoPlayer ${resolvedPlaybackIdRef.current}] Component unmounting`);
 
         // Ensure video is paused before unmounting
         if (videoRef.current) {
@@ -999,20 +1016,20 @@ export const VideoPlayer = forwardRef<HTMLVideoElement, VideoPlayerProps>(
         }
 
         // Clear visibility and unregister
-        updateVideoVisibility(resolvedPlaybackId, 0);
-        unregisterVideo(resolvedPlaybackId);
+        updateVideoVisibilityRef.current(resolvedPlaybackIdRef.current, 0);
+        unregisterVideoRef.current(resolvedPlaybackIdRef.current);
 
         // Clean up timers
-        if (longPressTimer) clearTimeout(longPressTimer);
+        if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
 
         // Revoke blob URL to prevent memory leaks
         if (blobUrlRef.current) {
-          verboseLog(`[VideoPlayer ${videoId}] Revoking blob URL on unmount`);
+          verboseLog(`[VideoPlayer ${resolvedPlaybackIdRef.current}] Revoking blob URL on unmount`);
           URL.revokeObjectURL(blobUrlRef.current);
           blobUrlRef.current = null;
         }
       };
-    }, [resolvedPlaybackId, videoId, unregisterVideo, updateVideoVisibility, longPressTimer]);
+    }, []);
 
     // Handle GIF format (use img tag)
     const currentUrl = allUrls[currentUrlIndex] || src;
