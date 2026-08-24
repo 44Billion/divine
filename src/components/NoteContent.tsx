@@ -4,7 +4,7 @@ import { SmartLink } from '@/components/SmartLink';
 import { nip19 } from 'nostr-tools';
 import { useAuthor } from '@/hooks/useAuthor';
 import { useValidatedProfileLinkPath } from '@/hooks/useValidatedProfileLinkPath';
-import { genUserName } from '@/lib/genUserName';
+import { resolveDisplayName } from '@/lib/resolveDisplayName';
 import { cn } from '@/lib/utils';
 
 interface NoteContentProps {
@@ -118,8 +118,10 @@ export function NoteContent({
 // Helper component to display user mentions
 function NostrMention({ pubkey }: { pubkey: string }) {
   const author = useAuthor(pubkey);
-  const hasRealName = !!(author.data?.metadata?.name || author.data?.metadata?.display_name);
-  const displayName = author.data?.metadata?.name || author.data?.metadata?.display_name || genUserName(pubkey);
+  // Trim to match resolveDisplayName: a whitespace-only field falls through to the
+  // generated name, so it must not be styled as a real one.
+  const hasRealName = !!(author.data?.metadata?.display_name?.trim() || author.data?.metadata?.name?.trim());
+  const displayName = resolveDisplayName(author.data?.metadata, pubkey);
   const nip05 = author.data?.metadata?.nip05;
   const profilePath = useValidatedProfileLinkPath({
     pubkey,
