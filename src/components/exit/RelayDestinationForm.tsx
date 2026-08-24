@@ -10,7 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { DestinationError } from "@/lib/exit/destination";
 import { normalizeRelayDestinationUrl } from "@/lib/exit/relayDestination";
-import type { PublishProgress, PublishResult, PublishSummary } from "@/lib/exit/relayPublisher";
+import { DEFAULT_RELAY_AGE_LIMIT_SECONDS, type PublishProgress, type PublishResult, type PublishSummary } from "@/lib/exit/relayPublisher";
 
 interface RelayDestinationFormProps {
   state: "idle" | "running" | "complete" | "failed";
@@ -18,6 +18,7 @@ interface RelayDestinationFormProps {
   results: PublishResult[] | null;
   summary: PublishSummary | null;
   failure: string | null;
+  oldestVideoCreatedAt: number | null;
   onStart(destination: string): Promise<void>;
 }
 
@@ -30,9 +31,14 @@ function progressLabel(result: PublishResult): string {
   }
 }
 
-export function RelayDestinationForm({ state, progress, results, summary, failure, onStart }: RelayDestinationFormProps) {
+function formatArchiveDate(timestamp: number): string {
+  return new Intl.DateTimeFormat("en-US", { month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(timestamp * 1000));
+}
+
+export function RelayDestinationForm({ state, progress, results, summary, failure, oldestVideoCreatedAt, onStart }: RelayDestinationFormProps) {
   const [destination, setDestination] = useState("");
   const [validationFailure, setValidationFailure] = useState<string | null>(null);
+  const defaultAgeCutoff = Math.floor(Date.now() / 1000) - DEFAULT_RELAY_AGE_LIMIT_SECONDS;
 
   function submit() {
     try {
@@ -52,6 +58,11 @@ export function RelayDestinationForm({ state, progress, results, summary, failur
         <p className="text-base leading-relaxed text-muted-foreground">
           Enter a relay you trust. Media links with confirmed destination copies will be updated; anything that could not be copied keeps its original link.
         </p>
+        {oldestVideoCreatedAt !== null && oldestVideoCreatedAt < defaultAgeCutoff && (
+          <p className="text-base leading-relaxed text-muted-foreground">
+            Your oldest archived video is from {formatArchiveDate(oldestVideoCreatedAt)}. Many relays refuse posts older than three years, so Divine republishes old videos with today&apos;s event date and keeps their original publication dates in the video metadata.
+          </p>
+        )}
         <div className="space-y-2">
           <label htmlFor="relay-destination" className="text-sm font-semibold text-foreground">Relay URL</label>
           <Input
@@ -94,6 +105,7 @@ export function RelayDestinationForm({ state, progress, results, summary, failur
                 <p className="font-semibold text-foreground">Relay publish finished.</p>
                 <p className="text-base leading-relaxed text-muted-foreground">
                   {summary.published} rewritten, {summary.unchanged} unchanged, {summary.failed} failed, and {summary.skipped} skipped.
+                  {summary.redated > 0 ? ` ${summary.redated} archived video${summary.redated === 1 ? " was" : "s were"} republished with today's event date; original publication dates remain in the video metadata.` : ""}
                   {summary.remainingMediaUrls > 0 ? ` ${summary.remainingMediaUrls} media link${summary.remainingMediaUrls === 1 ? "" : "s"} still point${summary.remainingMediaUrls === 1 ? "s" : ""} to the original location.` : ""}
                 </p>
               </div>

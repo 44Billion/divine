@@ -7,7 +7,14 @@ import { publishArchiveEvents, summarizePublishResults } from "./relayPublisher"
 const PUBKEY = "a".repeat(64);
 const SOURCE = `https://media.divine.video/${"b".repeat(64)}.mp4`;
 const DESTINATION_MEDIA = `https://blossom.example/${"b".repeat(64)}`;
+const SECOND_SOURCE = `https://media.divine.video/${"c".repeat(64)}.mp4`;
+const SECOND_DESTINATION_MEDIA = `https://blossom.example/${"c".repeat(64)}`;
 const RELAY = "wss://relay.example/nostr";
+// Fixtures sit inside the publisher's default relay age window, so only the
+// tests that pass their own nowSeconds and relayAgeLimitSeconds exercise
+// re-dating. A fixed literal would drift out of that window as the clock
+// advances and would silently re-date every fixture instead.
+const FIXTURE_CREATED_AT = Math.floor(Date.now() / 1000) - 1_000;
 
 function makeEvent(idChar: string, overrides: Partial<NostrEvent> = {}): NostrEvent {
   return {
@@ -15,7 +22,7 @@ function makeEvent(idChar: string, overrides: Partial<NostrEvent> = {}): NostrEv
     pubkey: PUBKEY,
     sig: idChar.repeat(128),
     kind: 1,
-    created_at: 1_700_000_000,
+    created_at: FIXTURE_CREATED_AT,
     content: "hello",
     tags: [],
     ...overrides,
@@ -35,11 +42,11 @@ function makeSigner(): NostrSigner & { signEvent: ReturnType<typeof vi.fn> } {
   } as unknown as NostrSigner & { signEvent: ReturnType<typeof vi.fn> };
 }
 
-function mirrorResult(): MirrorResult {
+function mirrorResult(source = SOURCE, destination = DESTINATION_MEDIA): MirrorResult {
   return {
-    references: [{ event_id: "1".repeat(64), tag: "url", url: SOURCE, sha256: "b".repeat(64) }],
-    source_url: SOURCE,
-    destination_url: DESTINATION_MEDIA,
+    references: [{ event_id: "1".repeat(64), tag: "url", url: source, sha256: "b".repeat(64) }],
+    source_url: source,
+    destination_url: destination,
     expected_sha256: "b".repeat(64),
     destination_sha256: "b".repeat(64),
     byte_size: 10,
@@ -93,7 +100,7 @@ describe("publishArchiveEvents", () => {
       relayFactory: () => relay,
     });
     expect(relay.published.map((event) => event.kind)).toEqual([34236, 1111, 1111]);
-    expect(relay.published[0].created_at).toBe(video.created_at + 1);
+    expect(relay.published[0].created_at).toBeGreaterThan(video.created_at);
     expect(relay.published[1].created_at).toBe(comment.created_at);
     expect(relay.published[2].created_at).toBe(reply.created_at);
     expect(relay.published[1].tags).toEqual([["E", relay.published[0].id], ["e", relay.published[0].id]]);
@@ -128,8 +135,33 @@ describe("publishArchiveEvents", () => {
 
     await publishArchiveEvents({ destination: RELAY, events: [video, playlist], mirrorResults: [mirrorResult()], signer, relayFactory: () => relay });
 
-    expect(relay.published[1].created_at).toBe(playlist.created_at + 1);
+    expect(relay.published[1].created_at).toBeGreaterThan(playlist.created_at);
     expect(relay.published[1].tags).toContainEqual(["e", relay.published[0].id]);
+  });
+
+  it("gives a richer later replacement a newer timestamp", async () => {
+    const video = makeEvent("1", {
+      kind: 34236,
+      content: `${SOURCE} ${SECOND_SOURCE}`,
+      tags: [["url", SOURCE], ["thumb", SECOND_SOURCE]],
+    });
+    const firstRelay = fakeRelay();
+    const secondRelay = fakeRelay();
+    const signer = makeSigner();
+
+    await publishArchiveEvents({ destination: RELAY, events: [video], mirrorResults: [mirrorResult()], signer, relayFactory: () => firstRelay, nowSeconds: video.created_at + 100 });
+    await publishArchiveEvents({
+      destination: RELAY,
+      events: [video],
+      mirrorResults: [mirrorResult(), mirrorResult(SECOND_SOURCE, SECOND_DESTINATION_MEDIA)],
+      signer,
+      relayFactory: () => secondRelay,
+      nowSeconds: video.created_at + 101,
+    });
+
+    expect(secondRelay.published[0].created_at).toBeGreaterThan(firstRelay.published[0].created_at);
+    expect(firstRelay.published[0].content).toContain(SECOND_SOURCE);
+    expect(secondRelay.published[0].content).toBe(`${DESTINATION_MEDIA} ${SECOND_DESTINATION_MEDIA}`);
   });
 
   it("replaces serialized repost content with the newly signed referenced event", async () => {
@@ -322,15 +354,101 @@ describe("publishArchiveEvents", () => {
     });
     expect(relay.event).not.toHaveBeenCalled();
   });
+
+  it("re-dates old videos before signing the reference graph", async () => {
+    const signer = makeSigner();
+    const relay = fakeRelay();
+    const video = makeEvent("1", {
+      kind: 34236,
+      created_at: 100,
+      tags: [["d", "archived-loop"], ["published_at", "80"]],
+    });
+    const comment = makeEvent("2", { kind: 1111, created_at: 100, tags: [["E", video.id], ["e", video.id]] });
+    const results = await publishArchiveEvents({
+      destination: RELAY,
+      events: [comment, video],
+      mirrorResults: [],
+      signer,
+      relayFactory: () => relay,
+      nowSeconds: 1_000,
+      relayAgeLimitSeconds: 500,
+    });
+
+    expect(relay.published[0]).toMatchObject({ kind: 34236, created_at: 1_000, tags: expect.arrayContaining([["published_at", "80"]]) });
+    expect(relay.published[1]).toMatchObject({ kind: 1111, created_at: 100 });
+    expect(relay.published[1].tags).toEqual([["E", relay.published[0].id], ["e", relay.published[0].id]]);
+    expect(results).toEqual(expect.arrayContaining([
+      expect.objectContaining({ event_id: video.id, status: "published", redated: true }),
+      expect.objectContaining({ event_id: comment.id, status: "published", redated: false }),
+    ]));
+  });
+
+  it("does not re-date old non-video events", async () => {
+    const signer = makeSigner();
+    const relay = fakeRelay();
+    const note = makeEvent("1", { kind: 1, created_at: 100 });
+    const results = await publishArchiveEvents({
+      destination: RELAY,
+      events: [note],
+      mirrorResults: [],
+      signer,
+      relayFactory: () => relay,
+      nowSeconds: 1_000,
+      relayAgeLimitSeconds: 500,
+    });
+
+    expect(relay.published).toEqual([note]);
+    expect(results[0]).toMatchObject({ status: "unchanged", redated: false });
+    expect(signer.signEvent).not.toHaveBeenCalled();
+  });
+
+  it("keeps old videos unchanged when the relay declares no lower age bound", async () => {
+    const signer = makeSigner();
+    const relay = fakeRelay();
+    const video = makeEvent("1", { kind: 34236, created_at: 100 });
+
+    const results = await publishArchiveEvents({
+      destination: RELAY,
+      events: [video],
+      mirrorResults: [],
+      signer,
+      relayFactory: () => relay,
+      nowSeconds: 1_000,
+      relayAgeLimitSeconds: 0,
+    });
+
+    expect(relay.published).toEqual([video]);
+    expect(results[0]).toMatchObject({ status: "unchanged", redated: false });
+    expect(signer.signEvent).not.toHaveBeenCalled();
+  });
+
+  it("reports a signer refusal instead of publishing an old video unchanged", async () => {
+    const signer = makeSigner();
+    signer.signEvent.mockRejectedValueOnce(new Error("not allowed"));
+    const relay = fakeRelay();
+    const video = makeEvent("1", { kind: 34236, created_at: 100, tags: [["d", "archived-loop"]] });
+    const results = await publishArchiveEvents({
+      destination: RELAY,
+      events: [video],
+      mirrorResults: [],
+      signer,
+      relayFactory: () => relay,
+      nowSeconds: 1_000,
+      relayAgeLimitSeconds: 500,
+    });
+
+    expect(results[0]).toMatchObject({ status: "failed", redated: true, reason: expect.stringContaining("signer refused") });
+    expect(relay.event).not.toHaveBeenCalled();
+  });
 });
 
 describe("summarizePublishResults", () => {
   it("reports every terminal state and remaining media URL", () => {
     expect(summarizePublishResults([
-      { event_id: "1".repeat(64), published_event_id: "a".repeat(64), kind: 1, status: "published", remaining_media_urls: 2 },
-      { event_id: "2".repeat(64), published_event_id: "2".repeat(64), kind: 1, status: "unchanged", remaining_media_urls: 0 },
-      { event_id: "3".repeat(64), published_event_id: null, kind: 4, status: "skipped", remaining_media_urls: 0 },
-      { event_id: "4".repeat(64), published_event_id: null, kind: 1, status: "failed", remaining_media_urls: 1 },
-    ])).toEqual({ published: 1, unchanged: 1, skipped: 1, failed: 1, remainingMediaUrls: 3 });
+      { event_id: "1".repeat(64), published_event_id: "a".repeat(64), kind: 1, status: "published", remaining_media_urls: 2, redated: true },
+      { event_id: "2".repeat(64), published_event_id: "2".repeat(64), kind: 1, status: "unchanged", remaining_media_urls: 0, redated: false },
+      { event_id: "3".repeat(64), published_event_id: null, kind: 4, status: "skipped", remaining_media_urls: 0, redated: false },
+      { event_id: "4".repeat(64), published_event_id: null, kind: 1, status: "failed", remaining_media_urls: 1, redated: false },
+    ])).toEqual({ published: 1, unchanged: 1, skipped: 1, failed: 1, redated: 1, remainingMediaUrls: 3 });
   });
 });
