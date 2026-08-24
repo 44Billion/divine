@@ -86,6 +86,23 @@ extract_meta() {
   LC_ALL=C printf '%s' "$body" | grep -aoE "<meta ${attr}=\"${key}\" content=\"[^\"]*\"" | head -1 | sed -E "s/<meta ${attr}=\"${key}\" content=\"([^\"]*)\"/\1/"
 }
 
+extract_final_response_headers() {
+  local header_file="$1"
+  local response_headers=""
+  local header_line
+
+  while IFS= read -r header_line || [[ -n "$header_line" ]]; do
+    header_line="${header_line%$'\r'}"
+    if [[ "$header_line" == HTTP/* ]]; then
+      response_headers="$header_line"
+    elif [[ -n "$response_headers" ]]; then
+      response_headers+=$'\n'"$header_line"
+    fi
+  done < "$header_file"
+
+  printf '%s' "$response_headers"
+}
+
 run_check() {
   local path="$1"
   local description="$2"
@@ -96,24 +113,56 @@ run_check() {
   local url="${BASE_URL}${path}"
   local tmp_headers
   local tmp_body
+  local tmp_error
   tmp_headers=$(mktemp)
   tmp_body=$(mktemp)
+  tmp_error=$(mktemp)
   local cleanup_needed=true
-  trap '[[ "${cleanup_needed:-false}" == "true" ]] && rm -f "$tmp_headers" "$tmp_body"' RETURN
+  trap '[[ "${cleanup_needed:-false}" == "true" ]] && rm -f "$tmp_headers" "$tmp_body" "$tmp_error"' RETURN
   cleanup_needed=true
 
-  local http_code
-  http_code=$(curl -s -L --max-time 30 --compressed \
+  # This audit makes ~64 live requests to a CDN edge per run, so a single dropped
+  # connection used to fail the whole deploy gate. Retry transport errors before
+  # calling it a parity failure. --retry-max-time keeps a genuinely unreachable
+  # origin from stacking 30s timeouts on every route.
+  local curl_result
+  local curl_exit=0
+  curl_result=$(curl -sS -L --max-time 30 --compressed \
+    --retry 2 --retry-delay 1 --retry-connrefused --retry-all-errors --retry-max-time 30 \
     -A "$ua_value" \
     -D "$tmp_headers" \
     -o "$tmp_body" \
-    -w '%{http_code}' \
-    "$url" 2>/dev/null || echo "000")
+    -w '%{http_code}|%{num_redirects}' \
+    "$url" 2>"$tmp_error") || curl_exit=$?
+
+  if [[ ${curl_exit} -ne 0 ]]; then
+    # curl's own diagnostics, not an HTTP status: report them as such so the log
+    # distinguishes "the edge served the wrong tags" from "the request never landed".
+    local curl_error
+    curl_error=$(tr -d '\r' < "$tmp_error" | grep -v '^[[:space:]]*$' | tail -1)
+    echo "  X ${ua_label} -> ${path} (network error after retries: curl exit ${curl_exit}${curl_error:+ - ${curl_error}})"
+    failed_checks=$((failed_checks + 1))
+    failures+=("${ua_label} ${path}: network error (curl exit ${curl_exit})")
+    return 1
+  fi
+
+  local http_code="${curl_result%%|*}"
+  local redirect_count="${curl_result##*|}"
+  local response_count
+  response_count=$(grep -c '^HTTP/' "$tmp_headers")
+
+  if [[ -s "$tmp_error" ]]; then
+    local recovered_from
+    recovered_from=$(tr -d '\r' < "$tmp_error" | grep -v '^[[:space:]]*$' | head -1)
+    echo "  ~ ${ua_label} -> ${path} (recovered after a transient network error${recovered_from:+ - ${recovered_from}})"
+  elif [[ ${response_count} -gt $((redirect_count + 1)) ]]; then
+    echo "  ~ ${ua_label} -> ${path} (recovered after a transient HTTP error)"
+  fi
 
   local body
   body=$(cat "$tmp_body")
   local headers
-  headers=$(cat "$tmp_headers")
+  headers=$(extract_final_response_headers "$tmp_headers")
 
   if [[ "$http_code" != "200" ]]; then
     echo "  X ${ua_label} -> ${path} (HTTP ${http_code})"
@@ -154,7 +203,7 @@ run_check() {
         fi
         ;;
       frame_ancestors_header)
-        if grep -qi '^content-security-policy:.*frame-ancestors' "$tmp_headers"; then
+        if grep -qi '^content-security-policy:.*frame-ancestors' <<< "$headers"; then
           :
         else
           all_passed=false
@@ -162,7 +211,7 @@ run_check() {
         fi
         ;;
       noindex_header)
-        if grep -qi '^x-robots-tag:.*noindex' "$tmp_headers"; then
+        if grep -qi '^x-robots-tag:.*noindex' <<< "$headers"; then
           :
         else
           all_passed=false
@@ -244,13 +293,13 @@ run_check() {
     fi
     passed_checks=$((passed_checks + 1))
     cleanup_needed=false
-    rm -f "$tmp_headers" "$tmp_body"
+    rm -f "$tmp_headers" "$tmp_body" "$tmp_error"
     return 0
   else
     failed_checks=$((failed_checks + 1))
     failures+=("${ua_label} ${path} (${description})")
     cleanup_needed=false
-    rm -f "$tmp_headers" "$tmp_body"
+    rm -f "$tmp_headers" "$tmp_body" "$tmp_error"
     return 1
   fi
 }
@@ -299,10 +348,19 @@ print_summary() {
 main() {
   print_header
 
-  if ! curl -sI --max-time 10 "${BASE_URL}/" >/dev/null 2>&1; then
+  local preflight_error
+  preflight_error=$(mktemp)
+  if ! curl -sSI --max-time 10 \
+    --retry 2 --retry-delay 1 --retry-connrefused --retry-all-errors --retry-max-time 30 \
+    "${BASE_URL}/" >/dev/null 2>"$preflight_error"; then
+    # Print curl's reason. Without it an unsupported flag or a TLS failure both
+    # read as "the site is down", which sends people looking in the wrong place.
     echo "ERROR: cannot reach ${BASE_URL}"
+    tr -d '\r' < "$preflight_error" | grep -v '^[[:space:]]*$' | sed 's/^/       /'
+    rm -f "$preflight_error"
     exit 2
   fi
+  rm -f "$preflight_error"
 
   for route_entry in "${ROUTES[@]}"; do
     local path="${route_entry%%|*}"
