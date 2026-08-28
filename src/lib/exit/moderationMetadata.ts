@@ -12,7 +12,6 @@ export type AnnotationMetadata =
   | {
       kind: "available";
       annotations: Map<string, AnnotationStatus>;
-      complete: boolean;
       invalidCount: number;
     };
 
@@ -31,7 +30,7 @@ export function parseAnnotations(raw: unknown): AnnotationMetadata {
     return { kind: "unsupported" };
   }
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
-    return { kind: "available", annotations: new Map(), complete: false, invalidCount: 1 };
+    return { kind: "available", annotations: new Map(), invalidCount: 1 };
   }
 
   const annotations = new Map<string, AnnotationStatus>();
@@ -51,7 +50,7 @@ export function parseAnnotations(raw: unknown): AnnotationMetadata {
     annotations.set(eventId, status);
   }
 
-  return { kind: "available", annotations, complete: invalidCount === 0, invalidCount };
+  return { kind: "available", annotations, invalidCount };
 }
 
 export function parseWithheld(raw: unknown): WithheldResult {

@@ -10,7 +10,7 @@ describe("moderation metadata", () => {
       [fixtureEventIdTwo]: { status: "quarantined" }
     });
 
-    expect(result).toMatchObject({ kind: "available", complete: true, invalidCount: 0 });
+    expect(result).toMatchObject({ kind: "available", invalidCount: 0 });
     expect(result.kind === "available" && Array.from(result.annotations)).toEqual([
       [fixtureEventIdOne, "banned"],
       [fixtureEventIdTwo, "quarantined"]
@@ -24,12 +24,12 @@ describe("moderation metadata", () => {
     [[], 1],
     ["bad", 1]
   ])("keeps malformed annotations from invalidating the event page", (raw, invalidCount) => {
-    expect(parseAnnotations(raw)).toMatchObject({ kind: "available", complete: false, invalidCount });
+    expect(parseAnnotations(raw)).toMatchObject({ kind: "available", invalidCount });
   });
 
   it("distinguishes an absent annotation field from an empty supported field", () => {
     expect(parseAnnotations(undefined)).toEqual({ kind: "unsupported" });
-    expect(parseAnnotations({})).toMatchObject({ kind: "available", complete: true, invalidCount: 0 });
+    expect(parseAnnotations({})).toMatchObject({ kind: "available", invalidCount: 0 });
   });
 
   it.each([
