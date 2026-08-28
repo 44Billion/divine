@@ -456,6 +456,24 @@ describe("exportOwnerEvents", () => {
     expect(result.moderation.withheld).toEqual({ kind: "known", count: 2 });
   });
 
+  it("matches an upper-case annotation key to the event it belongs to", async () => {
+    const eventId = "ab".repeat(32);
+    const result = await exportOwnerEvents({
+      endpointBase: "https://api.divine.video",
+      pubkey: fixturePubkey,
+      signer: new FixtureSigner(),
+      fetcher: async () => new Response(JSON.stringify({
+        data: [makeFixtureEvent({ id: eventId })],
+        moderation_annotations: { [eventId.toUpperCase()]: { status: "banned" } },
+        pagination: { next_cursor: null, has_more: false },
+        withheld: { complete: true, count: 0 }
+      }), { status: 200 })
+    });
+
+    expect(result.moderation.annotations).toEqual([{ eventId, status: "banned" }]);
+    expect(result.moderation).toMatchObject({ annotationsStatus: "complete", orphanAnnotationCount: 0 });
+  });
+
   it("keeps valid annotations while qualifying malformed, orphan, and conflicting entries", async () => {
     let requests = 0;
     const result = await exportOwnerEvents({

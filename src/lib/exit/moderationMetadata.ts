@@ -47,7 +47,9 @@ export function parseAnnotations(raw: unknown): AnnotationMetadata {
       invalidCount += 1;
       continue;
     }
-    annotations.set(eventId, status);
+    // `isHex64` accepts either case, so canonicalise before the key is compared
+    // against event IDs, the way the media hashes in `archive.ts` are.
+    annotations.set(eventId.toLowerCase(), status);
   }
 
   return { kind: "available", annotations, invalidCount };

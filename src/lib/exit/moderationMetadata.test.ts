@@ -27,6 +27,14 @@ describe("moderation metadata", () => {
     expect(parseAnnotations(raw)).toMatchObject({ kind: "available", invalidCount });
   });
 
+  it("canonicalises upper-case event IDs so they can match returned events", () => {
+    const result = parseAnnotations({ [fixtureEventIdOne.toUpperCase()]: { status: "banned" } });
+
+    expect(result.kind === "available" && Array.from(result.annotations)).toEqual([
+      [fixtureEventIdOne, "banned"]
+    ]);
+  });
+
   it("distinguishes an absent annotation field from an empty supported field", () => {
     expect(parseAnnotations(undefined)).toEqual({ kind: "unsupported" });
     expect(parseAnnotations({})).toMatchObject({ kind: "available", invalidCount: 0 });

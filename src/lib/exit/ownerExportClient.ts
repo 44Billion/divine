@@ -154,7 +154,7 @@ export async function exportOwnerEvents(options: OwnerExportClientOptions): Prom
     maxRateLimitRetries: options.maxRateLimitRetries, maxPages: options.maxPages, onProgress: options.onProgress,
   });
 
-  const filtered = dropOrphanAnnotations(annotations, new Set(result.events.map((event) => event.id)));
+  const filtered = dropOrphanAnnotations(annotations, new Set(result.events.map((event) => event.id.toLowerCase())));
   const annotationsStatus = annotationPagesAvailable === 0
     ? "unsupported"
     : annotationPagesUnsupported > 0 || invalidAnnotationCount > 0 || filtered.orphanCount > 0 || conflictingAnnotationCount > 0
