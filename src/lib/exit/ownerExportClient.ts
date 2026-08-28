@@ -26,6 +26,16 @@ interface OwnerExportPage extends ExportPage {
 
 export type ExportFailureCode = "invalid-pubkey" | "bad-cursor" | "expired-cursor" | "auth-required" | "pubkey-mismatch" | "rate-limited" | "server-failure" | "malformed-response" | "network-failure" | "cancelled" | "stalled-cursor" | "page-limit";
 
+export interface OwnerExportPageResponse {
+  data: ExportPage["data"];
+  moderation_annotations?: Record<string, { status: AnnotationStatus }>;
+  withheld?: { complete: false } | { complete: true; count: number };
+  pagination: {
+    next_cursor: string | null;
+    has_more: boolean;
+  };
+}
+
 export class OwnerExportError extends Error {
   constructor(public readonly code: ExportFailureCode, message: string, public readonly status?: number, public readonly retryAfterMs?: number) {
     super(message);
@@ -33,18 +43,20 @@ export class OwnerExportError extends Error {
   }
 }
 
+export interface OwnerExportModeration {
+  annotations: ModerationAnnotation[];
+  annotationsStatus: "complete" | "incomplete" | "unsupported";
+  invalidAnnotationCount: number;
+  orphanAnnotationCount: number;
+  conflictingAnnotationCount: number;
+  withheld: WithheldResult;
+}
+
 export interface OwnerExportResult {
   events: ExportPage["data"];
   pageCount: number;
   failures: OwnerExportError[];
-  moderation: {
-    annotations: ModerationAnnotation[];
-    annotationsStatus: "complete" | "incomplete" | "unsupported";
-    invalidAnnotationCount: number;
-    orphanAnnotationCount: number;
-    conflictingAnnotationCount: number;
-    withheld: WithheldResult;
-  };
+  moderation: OwnerExportModeration;
 }
 
 export interface OwnerExportClientOptions {
@@ -133,9 +145,6 @@ export async function exportOwnerEvents(options: OwnerExportClientOptions): Prom
       } else {
         annotationPagesAvailable += 1;
         invalidAnnotationCount += page.moderationAnnotations.invalidCount;
-        conflictingAnnotationCount += "conflictingCount" in page.moderationAnnotations
-          ? page.moderationAnnotations.conflictingCount
-          : 0;
         for (const [eventId, status] of page.moderationAnnotations.annotations) {
           const previous = annotations.get(eventId);
           if (previous && previous !== status) {

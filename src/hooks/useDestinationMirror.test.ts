@@ -1,7 +1,7 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { fixturePubkey, makeFixtureEvent, otherFixturePubkey } from "@/lib/exit/__fixtures__/exportFixtures";
+import { fixturePubkey, makeFixtureEvent, otherFixturePubkey, unsupportedModeration } from "@/lib/exit/__fixtures__/exportFixtures";
 import { FixtureSigner } from "@/lib/exit/__fixtures__/fixtureSigner";
 import { buildArchiveFiles } from "@/lib/exit/archive";
 
@@ -14,6 +14,7 @@ function files(pubkey: string) {
     sourceEndpoint: "https://api.divine.video",
     pageCount: 1,
     failures: [],
+    moderation: unsupportedModeration,
   });
 }
 

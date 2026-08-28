@@ -3,6 +3,8 @@
 
 import type { NostrEvent } from "@nostrify/nostrify";
 
+import type { OwnerExportModeration, OwnerExportPageResponse } from "../ownerExportClient";
+
 export const fixturePubkey = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 export const otherFixturePubkey = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 export const fixtureEventIdOne = "1111111111111111111111111111111111111111111111111111111111111111";
@@ -26,7 +28,16 @@ export function makeFixtureEvent(overrides: Partial<NostrEvent> = {}): NostrEven
   };
 }
 
-export const onePageExport = {
+export const unsupportedModeration: OwnerExportModeration = {
+  annotations: [],
+  annotationsStatus: "unsupported",
+  invalidAnnotationCount: 0,
+  orphanAnnotationCount: 0,
+  conflictingAnnotationCount: 0,
+  withheld: { kind: "unsupported" }
+};
+
+export const onePageExport: OwnerExportPageResponse = {
   data: [makeFixtureEvent()],
   pagination: {
     next_cursor: null,
@@ -34,7 +45,7 @@ export const onePageExport = {
   }
 };
 
-export const multiPageExport = [
+export const multiPageExport: OwnerExportPageResponse[] = [
   {
     data: [makeFixtureEvent()],
     pagination: {
@@ -59,7 +70,7 @@ export const multiPageExport = [
   }
 ];
 
-export const emptyExport = {
+export const emptyExport: OwnerExportPageResponse = {
   data: [],
   pagination: {
     next_cursor: null,

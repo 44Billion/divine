@@ -3,14 +3,14 @@ import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { buildArchiveFiles } from "@/lib/exit/archive";
-import { fixturePubkey, makeFixtureEvent } from "@/lib/exit/__fixtures__/exportFixtures";
+import { fixturePubkey, makeFixtureEvent, unsupportedModeration } from "@/lib/exit/__fixtures__/exportFixtures";
 import { openDestinationRelay } from "@/lib/exit/relayConnection";
 
 import { useDiscoveryPointers } from "./useDiscoveryPointers";
 
 vi.mock("@/lib/exit/relayConnection", () => ({ openDestinationRelay: vi.fn() }));
 
-const files = buildArchiveFiles({ events: [makeFixtureEvent()], pubkey: fixturePubkey, sourceEndpoint: "https://api.divine.video", pageCount: 1, failures: [] });
+const files = buildArchiveFiles({ events: [makeFixtureEvent()], pubkey: fixturePubkey, sourceEndpoint: "https://api.divine.video", pageCount: 1, failures: [], moderation: unsupportedModeration });
 
 function signer(sign?: (template: Omit<NostrEvent, "id" | "pubkey" | "sig">) => Promise<NostrEvent>): NostrSigner {
   return {
@@ -111,6 +111,7 @@ describe("useDiscoveryPointers", () => {
       sourceEndpoint: "https://api.divine.video",
       pageCount: 1,
       failures: [],
+      moderation: unsupportedModeration,
     });
     const testSigner = signer();
     const { result } = renderHook(() => useDiscoveryPointers({ files: futureFiles, relayDestination: "wss://relay.example/", blossomDestination: "https://blossom.example", signer: testSigner }));

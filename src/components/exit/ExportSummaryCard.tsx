@@ -9,13 +9,13 @@ interface ExportSummaryCardProps {
 }
 
 function withheldMessage(withheld: ArchiveManifest["moderation"]["withheld"]): string {
-  if (withheld.kind === "known") {
+  if (withheld?.complete) {
     if (withheld.count === 0) {
       return "Divine confirmed that it withheld no events from this archive.";
     }
     return `Divine withheld ${withheld.count} event${withheld.count === 1 ? "" : "s"} under its content rules. ${withheld.count === 1 ? "It isn't" : "They aren't"} in this archive.`;
   }
-  if (withheld.kind === "unavailable") {
+  if (withheld?.complete === false) {
     return "Divine couldn't confirm whether any events were withheld.";
   }
   return "This Divine API version didn't provide withheld-event details.";
@@ -26,19 +26,19 @@ export function ExportSummaryCard({ manifest, mediaCount }: ExportSummaryCardPro
   const moderation = manifest.moderation;
   const bannedCount = moderation.annotations.filter(({ status }) => status === "banned").length;
   const quarantinedCount = moderation.annotations.filter(({ status }) => status === "quarantined").length;
-  const moderationUnqualified = moderation.annotations_status !== "complete" || moderation.withheld.kind !== "known";
-  const withheldPositive = moderation.withheld.kind === "known" && moderation.withheld.count > 0;
-  const warning = failures.length > 0 || moderationUnqualified || withheldPositive;
+  const moderationIncomplete = moderation.annotations_status === "incomplete" || moderation.withheld?.complete === false;
+  const withheldPositive = moderation.withheld?.complete === true && moderation.withheld.count > 0;
+  const warning = failures.length > 0 || moderationIncomplete || withheldPositive;
 
   const heading = failures.length > 0
     ? "This archive is incomplete."
-    : moderationUnqualified
-      ? "Your archive is ready, with moderation details unavailable."
-      : withheldPositive
+    : manifest.event_count === 0
+      ? "Your archive is ready, and it is empty."
+      : moderationIncomplete
+        ? "Your archive is ready, with moderation details unavailable."
+        : withheldPositive
         ? "Your archive is ready, with some events withheld."
-        : manifest.event_count === 0
-          ? "Your archive is ready, and it is empty."
-          : "Your archive is ready.";
+        : "Your archive is ready.";
 
   return (
     <Card variant="brand" accent={warning ? "yellow" : "green"}>

@@ -192,8 +192,20 @@ describe("ExitStartPage", () => {
     await userEvent.click(screen.getByRole("button", { name: /Create my archive/ }));
 
     await waitFor(() => expect(screen.getByText("This Divine API version didn't provide withheld-event details.")).toBeInTheDocument());
+    expect(screen.getByText("Your archive is ready.")).toBeInTheDocument();
     expect(screen.getByText("This Divine API version didn't provide event moderation annotations.")).toBeInTheDocument();
     expect(screen.queryByText(/withheld no events/)).not.toBeInTheDocument();
+  });
+
+  it("preserves the empty archive heading when moderation metadata is unsupported", async () => {
+    mockUseCurrentUser.mockReturnValue(signedIn());
+    vi.stubGlobal("fetch", createFixtureFetch("empty"));
+
+    render(<TestApp><ExitStartPage /></TestApp>);
+    await userEvent.click(screen.getByRole("button", { name: /Create my archive/ }));
+
+    await waitFor(() => expect(screen.getByText("Your archive is ready, and it is empty.")).toBeInTheDocument());
+    expect(screen.queryByText("Your archive is ready, with moderation details unavailable.")).not.toBeInTheDocument();
   });
 
   it("reports banned and quarantined returned events separately", async () => {

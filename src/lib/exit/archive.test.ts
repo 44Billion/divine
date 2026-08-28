@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { fixtureMediaHash, fixturePubkey, makeFixtureEvent } from "./__fixtures__/exportFixtures";
+import { fixtureMediaHash, fixturePubkey, makeFixtureEvent, unsupportedModeration } from "./__fixtures__/exportFixtures";
 import { buildArchiveFiles, completeArchiveMedia, discoverMediaReferences, serializeArchiveFiles } from "./archive";
 
 describe("archive builder", () => {
@@ -12,6 +12,7 @@ describe("archive builder", () => {
       sourceEndpoint: "https://api.divine.video",
       pageCount: 1,
       failures: [],
+      moderation: unsupportedModeration,
       generatedAt: new Date("2026-08-12T21:00:00Z")
     });
 
@@ -29,8 +30,7 @@ describe("archive builder", () => {
         annotations_status: "unsupported",
         invalid_annotation_count: 0,
         orphan_annotation_count: 0,
-        conflicting_annotation_count: 0,
-        withheld: { kind: "unsupported" }
+        conflicting_annotation_count: 0
       }
     });
   });
@@ -38,7 +38,8 @@ describe("archive builder", () => {
   it("adds moderation metadata without changing the serialized signed events", () => {
     const event = makeFixtureEvent();
     const withoutMetadata = buildArchiveFiles({
-      events: [event], pubkey: fixturePubkey, sourceEndpoint: "https://api.divine.video", pageCount: 1, failures: []
+      events: [event], pubkey: fixturePubkey, sourceEndpoint: "https://api.divine.video", pageCount: 1,
+      failures: [], moderation: unsupportedModeration
     });
     const withMetadata = buildArchiveFiles({
       events: [event],
@@ -63,7 +64,7 @@ describe("archive builder", () => {
       invalid_annotation_count: 0,
       orphan_annotation_count: 0,
       conflicting_annotation_count: 0,
-      withheld: { kind: "known", count: 2 }
+      withheld: { complete: true, count: 2 }
     });
   });
 
@@ -229,6 +230,7 @@ describe("archive builder", () => {
       sourceEndpoint: "https://api.divine.video",
       pageCount: 1,
       failures: [],
+      moderation: unsupportedModeration,
       generatedAt: new Date("2026-08-12T21:00:00Z")
     });
 
@@ -238,7 +240,8 @@ describe("archive builder", () => {
   it("merges per-reference results, summarizes blobs, and certifies only trusted paths", () => {
     const archive = buildArchiveFiles({
       events: [makeFixtureEvent()], pubkey: fixturePubkey, sourceEndpoint: "https://api.divine.video",
-      pageCount: 1, failures: [], generatedAt: new Date("2026-08-12T21:00:00Z"),
+      pageCount: 1, failures: [], moderation: unsupportedModeration,
+      generatedAt: new Date("2026-08-12T21:00:00Z"),
     });
     const reference = archive["media.json"][0];
     const completed = completeArchiveMedia(archive, [
