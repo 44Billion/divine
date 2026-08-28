@@ -205,6 +205,16 @@ async function verifyReadback(
       : "The source did not advertise a hash, so the destination copy could not be compared." };
 }
 
+function isDestinationBlobUrl(sourceUrl: string, destination: string, sha256: string): boolean {
+  try {
+    const source = new URL(sourceUrl);
+    const pathHash = source.pathname.match(/^\/([a-f0-9]{64})(?:\.[^/]+)?$/i)?.[1];
+    return source.origin === new URL(destination).origin && pathHash?.toLowerCase() === sha256.toLowerCase();
+  } catch {
+    return false;
+  }
+}
+
 async function probeExistingBlob(
   references: MediaReference[],
   sha256: string,
@@ -219,7 +229,7 @@ async function probeExistingBlob(
     });
     if (!response.ok) return null;
     const sourceUrl = references[0].url;
-    const destinationUrl = new URL(sourceUrl).origin === new URL(options.destination).origin
+    const destinationUrl = isDestinationBlobUrl(sourceUrl, options.destination, sha256)
       ? sourceUrl
       : canonicalUrl;
     const size = response.headers.get("content-length");
@@ -281,7 +291,7 @@ async function mirrorOne(
 export async function mirrorArchiveMedia(options: MirrorOptions): Promise<MirrorResult[]> {
   const groups = groupReferences(options.references);
   const results: MirrorResult[] = [];
-  let mirrorAttempts = 0;
+  let copyAttempts = 0;
   for (const references of groups) {
     if (options.signal?.aborted) throw new DOMException("Mirror cancelled", "AbortError");
     const reference = references[0];
@@ -300,8 +310,10 @@ export async function mirrorArchiveMedia(options: MirrorOptions): Promise<Mirror
       };
     } else {
       const outcome = await mirrorOne(references, reference.sha256, options);
-      if (mirrorAttempts === 0 && outcome.destinationError) throw outcome.destinationError;
-      mirrorAttempts += 1;
+      if (outcome.result.verification !== "already-present") {
+        if (copyAttempts === 0 && outcome.destinationError) throw outcome.destinationError;
+        copyAttempts += 1;
+      }
       result = outcome.result;
     }
     results.push(result);

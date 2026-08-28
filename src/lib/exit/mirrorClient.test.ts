@@ -254,6 +254,24 @@ describe("mirrorArchiveMedia", () => {
     });
   });
 
+  it("uses the canonical destination URL when a same-origin source names another blob", async () => {
+    const fetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response(null, { status: 409 }))
+      .mockResolvedValueOnce(new Response(null, { status: 200 }));
+
+    const results = await mirrorArchiveMedia({
+      destination: "https://blossom.example",
+      references: [reference(`https://blossom.example/${otherHash}.jpg`)],
+      signer,
+      fetcher,
+    });
+
+    expect(results[0]).toMatchObject({
+      verification: "already-present",
+      destination_url: `https://blossom.example/${hash}`,
+    });
+  });
+
   it("keeps a refused mirror failed when the destination does not serve the blob", async () => {
     const fetcher = vi.fn<typeof fetch>()
       .mockResolvedValueOnce(new Response(null, { status: 409 }))
@@ -274,6 +292,21 @@ describe("mirrorArchiveMedia", () => {
     await expect(mirrorArchiveMedia({
       destination: "https://blossom.example", references: [reference("https://source.example/one")], signer, fetcher,
     })).resolves.toMatchObject([{ verification: "already-present" }]);
+  });
+
+  it("keeps the canary for the first blob that is not already present", async () => {
+    const fetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response(null, { status: 403 }))
+      .mockResolvedValueOnce(new Response(null, { status: 200 }))
+      .mockResolvedValueOnce(new Response(null, { status: 403 }))
+      .mockResolvedValueOnce(new Response(null, { status: 404 }));
+
+    await expect(mirrorArchiveMedia({
+      destination: "https://blossom.example",
+      references: [reference("https://source.example/one"), reference("https://source.example/two", otherHash)],
+      signer,
+      fetcher,
+    })).rejects.toMatchObject({ code: "auth-required" });
   });
 
   it("does not probe after a hash mismatch", async () => {
