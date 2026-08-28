@@ -6,9 +6,23 @@ import type { NostrSigner } from "@nostrify/nostrify";
 import { walkExportCursor, type CursorWalkProgress } from "./cursorWalk";
 import { exportRetryDelayMs, readExportErrorBody, signedExportGet, validateExportPage, type ExportPage } from "./exportTransport";
 import { isHex64 } from "./hex";
+import {
+  dropOrphanAnnotations,
+  parseAnnotations,
+  parseWithheld,
+  type AnnotationMetadata,
+  type AnnotationStatus,
+  type ModerationAnnotation,
+  type WithheldResult
+} from "./moderationMetadata";
 
 export type { ExportPage } from "./exportTransport";
 export type ExportProgress = CursorWalkProgress;
+
+interface OwnerExportPage extends ExportPage {
+  moderationAnnotations: AnnotationMetadata;
+  withheld: WithheldResult;
+}
 
 export type ExportFailureCode = "invalid-pubkey" | "bad-cursor" | "expired-cursor" | "auth-required" | "pubkey-mismatch" | "rate-limited" | "server-failure" | "malformed-response" | "network-failure" | "cancelled" | "stalled-cursor" | "page-limit";
 
@@ -19,7 +33,19 @@ export class OwnerExportError extends Error {
   }
 }
 
-export interface OwnerExportResult { events: ExportPage["data"]; pageCount: number; failures: OwnerExportError[] }
+export interface OwnerExportResult {
+  events: ExportPage["data"];
+  pageCount: number;
+  failures: OwnerExportError[];
+  moderation: {
+    annotations: ModerationAnnotation[];
+    annotationsStatus: "complete" | "incomplete" | "unsupported";
+    invalidAnnotationCount: number;
+    orphanAnnotationCount: number;
+    conflictingAnnotationCount: number;
+    withheld: WithheldResult;
+  };
+}
 
 export interface OwnerExportClientOptions {
   endpointBase: string; pubkey: string; signer: NostrSigner; limit?: number; fetcher?: typeof fetch;
@@ -61,7 +87,7 @@ function malformedMessage(detail: string) {
   return "Divine returned a response this tool could not read.";
 }
 
-async function fetchOwnerPage(input: { url: string; pubkey: string; signer: NostrSigner; fetcher: typeof fetch; signal?: AbortSignal; retryCount: number }) {
+async function fetchOwnerPage(input: { url: string; pubkey: string; signer: NostrSigner; fetcher: typeof fetch; signal?: AbortSignal; retryCount: number }): Promise<OwnerExportPage> {
   const response = await signedExportGet({
     ...input,
     authFailure: () => new OwnerExportError("auth-required", "This export could not be signed. If your account is restricted, appeal first. Otherwise sign in again, then restart the export."),
@@ -74,7 +100,14 @@ async function fetchOwnerPage(input: { url: string; pubkey: string; signer: Nost
   if (response.status === 429) throw new OwnerExportError("rate-limited", "Divine asked this export to slow down. Wait a moment and try again.", 429, exportRetryDelayMs(response, input.retryCount));
   if (!response.ok) throw new OwnerExportError("server-failure", "Divine could not finish this export right now. Try again later.", response.status);
   try {
-    return validateExportPage(await response.json(), input.pubkey, (detail) => new OwnerExportError("malformed-response", malformedMessage(detail)));
+    const raw = await response.json();
+    const page = validateExportPage(raw, input.pubkey, (detail) => new OwnerExportError("malformed-response", malformedMessage(detail)));
+    const metadata = raw as { moderation_annotations?: unknown; withheld?: unknown };
+    return {
+      ...page,
+      moderationAnnotations: parseAnnotations(metadata.moderation_annotations),
+      withheld: parseWithheld(metadata.withheld),
+    };
   } catch (error) {
     if (error instanceof OwnerExportError) throw error;
     throw new OwnerExportError("malformed-response", malformedMessage("response"));
@@ -84,12 +117,59 @@ async function fetchOwnerPage(input: { url: string; pubkey: string; signer: Nost
 export async function exportOwnerEvents(options: OwnerExportClientOptions): Promise<OwnerExportResult> {
   const { endpointBase, pubkey, signer, fetcher = fetch, limit = 500, signal } = options;
   if (!isHex64(pubkey)) throw new OwnerExportError("invalid-pubkey", "The account identifier is not valid.", 400);
-  return walkExportCursor({
-    fetchPage: (cursor, retryCount) => fetchOwnerPage({ url: buildUrl(endpointBase, pubkey, limit, cursor), pubkey, signer, fetcher, signal, retryCount }),
+  const annotations = new Map<string, AnnotationStatus>();
+  let annotationPagesAvailable = 0;
+  let annotationPagesUnsupported = 0;
+  let invalidAnnotationCount = 0;
+  let conflictingAnnotationCount = 0;
+  let lastWithheld: WithheldResult = { kind: "unsupported" };
+
+  const result = await walkExportCursor({
+    fetchPage: async (cursor, retryCount) => {
+      const page = await fetchOwnerPage({ url: buildUrl(endpointBase, pubkey, limit, cursor), pubkey, signer, fetcher, signal, retryCount });
+      lastWithheld = page.withheld;
+      if (page.moderationAnnotations.kind === "unsupported") {
+        annotationPagesUnsupported += 1;
+      } else {
+        annotationPagesAvailable += 1;
+        invalidAnnotationCount += page.moderationAnnotations.invalidCount;
+        conflictingAnnotationCount += "conflictingCount" in page.moderationAnnotations
+          ? page.moderationAnnotations.conflictingCount
+          : 0;
+        for (const [eventId, status] of page.moderationAnnotations.annotations) {
+          const previous = annotations.get(eventId);
+          if (previous && previous !== status) {
+            conflictingAnnotationCount += 1;
+            continue;
+          }
+          annotations.set(eventId, status);
+        }
+      }
+      return page;
+    },
     isFailure: (error): error is OwnerExportError => error instanceof OwnerExportError,
     makeFailure: ownerFailure,
     makeCancelledFailure: () => new OwnerExportError("cancelled", "The export was cancelled."),
     cancelledCode: "cancelled", rateLimitedCode: "rate-limited", sleep: options.sleep, signal,
     maxRateLimitRetries: options.maxRateLimitRetries, maxPages: options.maxPages, onProgress: options.onProgress,
   });
+
+  const filtered = dropOrphanAnnotations(annotations, new Set(result.events.map((event) => event.id)));
+  const annotationsStatus = annotationPagesAvailable === 0
+    ? "unsupported"
+    : annotationPagesUnsupported > 0 || invalidAnnotationCount > 0 || filtered.orphanCount > 0 || conflictingAnnotationCount > 0
+      ? "incomplete"
+      : "complete";
+
+  return {
+    ...result,
+    moderation: {
+      annotations: Array.from(filtered.annotations, ([eventId, status]) => ({ eventId, status })),
+      annotationsStatus,
+      invalidAnnotationCount,
+      orphanAnnotationCount: filtered.orphanCount,
+      conflictingAnnotationCount,
+      withheld: result.failures.length > 0 ? { kind: "unavailable" } : lastWithheld,
+    },
+  };
 }

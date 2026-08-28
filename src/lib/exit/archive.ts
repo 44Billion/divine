@@ -4,6 +4,7 @@
 import type { NostrEvent } from "@nostrify/nostrify";
 
 import { isHex64 } from "./hex";
+import type { ModerationAnnotation, WithheldResult } from "./moderationMetadata";
 import type { MediaDownloadResult, MediaVerification } from "./mediaDownloader";
 
 export interface ArchiveFailure extends Error {
@@ -34,6 +35,14 @@ export interface ArchiveManifest {
     enforcement_id: string;
     enforced_at: string | null;
     expires_at: string;
+  };
+  moderation: {
+    annotations: Array<{ event_id: string; status: ModerationAnnotation["status"] }>;
+    annotations_status: "complete" | "incomplete" | "unsupported";
+    invalid_annotation_count: number;
+    orphan_annotation_count: number;
+    conflicting_annotation_count: number;
+    withheld: WithheldResult;
   };
   media?: MediaSummary;
 }
@@ -174,8 +183,25 @@ export function buildArchiveFiles(input: {
   failures: ArchiveFailure[];
   sourceName?: string;
   snapshot?: ArchiveManifest["snapshot"];
+  moderation?: {
+    annotations: ModerationAnnotation[];
+    annotationsStatus: "complete" | "incomplete" | "unsupported";
+    invalidAnnotationCount: number;
+    orphanAnnotationCount: number;
+    conflictingAnnotationCount: number;
+    withheld: WithheldResult;
+  };
   generatedAt?: Date;
 }): ArchiveFiles {
+  const moderation = input.moderation ?? {
+    annotations: [],
+    annotationsStatus: "unsupported" as const,
+    invalidAnnotationCount: 0,
+    orphanAnnotationCount: 0,
+    conflictingAnnotationCount: 0,
+    withheld: { kind: "unsupported" as const }
+  };
+
   return {
     "events.json": input.events,
     "manifest.json": {
@@ -191,6 +217,14 @@ export function buildArchiveFiles(input: {
         status: failure.status
       })),
       ...(input.snapshot ? { snapshot: input.snapshot } : {}),
+      moderation: {
+        annotations: moderation.annotations.map(({ eventId, status }) => ({ event_id: eventId, status })),
+        annotations_status: moderation.annotationsStatus,
+        invalid_annotation_count: moderation.invalidAnnotationCount,
+        orphan_annotation_count: moderation.orphanAnnotationCount,
+        conflicting_annotation_count: moderation.conflictingAnnotationCount,
+        withheld: moderation.withheld
+      }
     },
     "media.json": discoverMediaReferences(input.events)
   };

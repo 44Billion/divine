@@ -191,7 +191,11 @@ and drawer UI. `vite-plugin-pwa` generates the PWA service worker.
 ### Account Archive Export
 
 The `/exit/start` flow reads raw signed events through the owner-export API and
-builds archive metadata in `src/lib/exit/`. Its media option writes a store-only
+builds archive metadata in `src/lib/exit/`. Additive moderation annotations are
+accumulated across pages, while the withheld-event acknowledgement is accepted
+only from the terminal page. The manifest records supported, incomplete, and
+unsupported metadata distinctly; `events.json` keeps the bare signed events
+unchanged. Its media option writes a store-only
 Zip64 archive directly to a user-selected file, downloads one unique blob at a
 time, verifies advertised SHA-256 hashes, and records partial failures without
 changing signed events. Viewer authorization is retried only for the exact

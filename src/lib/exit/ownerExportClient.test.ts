@@ -364,6 +364,7 @@ describe("exportOwnerEvents", () => {
     expect(result.events).toHaveLength(1);
     expect(result.pageCount).toBe(1);
     expect(result.failures.map((failure) => failure.code)).toEqual(["server-failure"]);
+    expect(result.moderation.withheld).toEqual({ kind: "unavailable" });
   });
 
   it("still rejects when the export fails before anything was collected", async () => {
@@ -399,6 +400,7 @@ describe("exportOwnerEvents", () => {
     expect(requests).toBe(2);
     expect(result.events).toHaveLength(2);
     expect(result.failures.map((failure) => failure.code)).toEqual(["stalled-cursor"]);
+    expect(result.moderation.withheld).toEqual({ kind: "unavailable" });
   });
 
   it("stops at the page ceiling and reports the archive as incomplete", async () => {
@@ -425,6 +427,66 @@ describe("exportOwnerEvents", () => {
     expect(result.pageCount).toBe(2);
     expect(result.events).toHaveLength(2);
     expect(result.failures.map((failure) => failure.code)).toEqual(["page-limit"]);
+    expect(result.moderation.withheld).toEqual({ kind: "unavailable" });
+  });
+
+  it("accumulates annotations and retains only the terminal withheld acknowledgement", async () => {
+    let requests = 0;
+    const result = await exportOwnerEvents({
+      endpointBase: "https://api.divine.video",
+      pubkey: fixturePubkey,
+      signer: new FixtureSigner(),
+      fetcher: async () => {
+        requests += 1;
+        const event = makeFixtureEvent({ id: requests === 1 ? "1".repeat(64) : "2".repeat(64) });
+        return new Response(JSON.stringify({
+          data: [event],
+          moderation_annotations: { [event.id]: { status: requests === 1 ? "banned" : "quarantined" } },
+          pagination: { next_cursor: requests === 1 ? "next" : null, has_more: requests === 1 },
+          withheld: requests === 1 ? { complete: true, count: 99 } : { complete: true, count: 2 }
+        }), { status: 200 });
+      }
+    });
+
+    expect(result.moderation.annotations).toEqual([
+      { eventId: "1".repeat(64), status: "banned" },
+      { eventId: "2".repeat(64), status: "quarantined" }
+    ]);
+    expect(result.moderation.annotationsStatus).toBe("complete");
+    expect(result.moderation.withheld).toEqual({ kind: "known", count: 2 });
+  });
+
+  it("keeps valid annotations while qualifying malformed, orphan, and conflicting entries", async () => {
+    let requests = 0;
+    const result = await exportOwnerEvents({
+      endpointBase: "https://api.divine.video",
+      pubkey: fixturePubkey,
+      signer: new FixtureSigner(),
+      fetcher: async () => {
+        requests += 1;
+        return new Response(JSON.stringify({
+          data: requests === 1 ? [makeFixtureEvent()] : [],
+          moderation_annotations: requests === 1
+            ? {
+                [makeFixtureEvent().id]: { status: "banned" },
+                ["f".repeat(64)]: { status: "quarantined" },
+                short: { status: "banned" }
+              }
+            : { [makeFixtureEvent().id]: { status: "quarantined" } },
+          pagination: { next_cursor: requests === 1 ? "next" : null, has_more: requests === 1 },
+          ...(requests === 2 ? { withheld: { complete: true, count: 0 } } : {})
+        }), { status: 200 });
+      }
+    });
+
+    expect(result.moderation.annotations).toEqual([{ eventId: makeFixtureEvent().id, status: "banned" }]);
+    expect(result.moderation).toMatchObject({
+      annotationsStatus: "incomplete",
+      invalidAnnotationCount: 1,
+      orphanAnnotationCount: 1,
+      conflictingAnnotationCount: 1,
+      withheld: { kind: "known", count: 0 }
+    });
   });
 
   it("rejects invalid pubkeys before making a request", async () => {

@@ -165,6 +165,56 @@ describe("ExitStartPage", () => {
     expect(String(fetcher.mock.calls[1][0])).toContain("/export/snapshot?enforcement_id=");
   });
 
+  it.each([
+    [{ complete: true, count: 2 }, "Divine withheld 2 events under its content rules. They aren't in this archive."],
+    [{ complete: true, count: 0 }, "Divine confirmed that it withheld no events from this archive."],
+    [{ complete: false }, "Divine couldn't confirm whether any events were withheld."]
+  ])("renders a distinct withheld result for %#", async (withheld, message) => {
+    mockUseCurrentUser.mockReturnValue(signedIn());
+    vi.stubGlobal("fetch", async () => new Response(JSON.stringify({
+      data: [makeFixtureEvent()],
+      moderation_annotations: {},
+      pagination: { next_cursor: null, has_more: false },
+      withheld
+    }), { status: 200 }));
+
+    render(<TestApp><ExitStartPage /></TestApp>);
+    await userEvent.click(screen.getByRole("button", { name: /Create my archive/ }));
+
+    await waitFor(() => expect(screen.getByText(message)).toBeInTheDocument());
+  });
+
+  it("reports unsupported moderation metadata instead of implying a verified zero", async () => {
+    mockUseCurrentUser.mockReturnValue(signedIn());
+    vi.stubGlobal("fetch", createFixtureFetch("one-page"));
+
+    render(<TestApp><ExitStartPage /></TestApp>);
+    await userEvent.click(screen.getByRole("button", { name: /Create my archive/ }));
+
+    await waitFor(() => expect(screen.getByText("This Divine API version didn't provide withheld-event details.")).toBeInTheDocument());
+    expect(screen.getByText("This Divine API version didn't provide event moderation annotations.")).toBeInTheDocument();
+    expect(screen.queryByText(/withheld no events/)).not.toBeInTheDocument();
+  });
+
+  it("reports banned and quarantined returned events separately", async () => {
+    mockUseCurrentUser.mockReturnValue(signedIn());
+    vi.stubGlobal("fetch", async () => new Response(JSON.stringify({
+      data: [makeFixtureEvent(), makeFixtureEvent({ id: "2".repeat(64) })],
+      moderation_annotations: {
+        [makeFixtureEvent().id]: { status: "banned" },
+        ["2".repeat(64)]: { status: "quarantined" }
+      },
+      pagination: { next_cursor: null, has_more: false },
+      withheld: { complete: true, count: 0 }
+    }), { status: 200 }));
+
+    render(<TestApp><ExitStartPage /></TestApp>);
+    await userEvent.click(screen.getByRole("button", { name: /Create my archive/ }));
+
+    await waitFor(() => expect(screen.getByText(/1 event in this archive is banned on Divine/)).toBeInTheDocument());
+    expect(screen.getByText(/1 event in this archive is quarantined on Divine/)).toBeInTheDocument();
+  });
+
   it("validates a custom Blossom destination inline", async () => {
     mockUseCurrentUser.mockReturnValue(signedIn());
     vi.stubGlobal("fetch", createFixtureFetch("one-page"));

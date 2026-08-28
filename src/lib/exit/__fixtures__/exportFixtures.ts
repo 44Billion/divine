@@ -3,8 +3,6 @@
 
 import type { NostrEvent } from "@nostrify/nostrify";
 
-import type { ExportPage } from "../ownerExportClient";
-
 export const fixturePubkey = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 export const otherFixturePubkey = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 export const fixtureEventIdOne = "1111111111111111111111111111111111111111111111111111111111111111";
@@ -28,7 +26,7 @@ export function makeFixtureEvent(overrides: Partial<NostrEvent> = {}): NostrEven
   };
 }
 
-export const onePageExport: ExportPage = {
+export const onePageExport = {
   data: [makeFixtureEvent()],
   pagination: {
     next_cursor: null,
@@ -36,7 +34,7 @@ export const onePageExport: ExportPage = {
   }
 };
 
-export const multiPageExport: ExportPage[] = [
+export const multiPageExport = [
   {
     data: [makeFixtureEvent()],
     pagination: {
@@ -61,7 +59,7 @@ export const multiPageExport: ExportPage[] = [
   }
 ];
 
-export const emptyExport: ExportPage = {
+export const emptyExport = {
   data: [],
   pagination: {
     next_cursor: null,

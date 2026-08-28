@@ -23,7 +23,47 @@ describe("archive builder", () => {
       source_name: "Divine relay",
       source_endpoint: "https://api.divine.video",
       page_count: 1,
-      failures: []
+      failures: [],
+      moderation: {
+        annotations: [],
+        annotations_status: "unsupported",
+        invalid_annotation_count: 0,
+        orphan_annotation_count: 0,
+        conflicting_annotation_count: 0,
+        withheld: { kind: "unsupported" }
+      }
+    });
+  });
+
+  it("adds moderation metadata without changing the serialized signed events", () => {
+    const event = makeFixtureEvent();
+    const withoutMetadata = buildArchiveFiles({
+      events: [event], pubkey: fixturePubkey, sourceEndpoint: "https://api.divine.video", pageCount: 1, failures: []
+    });
+    const withMetadata = buildArchiveFiles({
+      events: [event],
+      pubkey: fixturePubkey,
+      sourceEndpoint: "https://api.divine.video",
+      pageCount: 1,
+      failures: [],
+      moderation: {
+        annotations: [{ eventId: event.id, status: "banned" }],
+        annotationsStatus: "complete",
+        invalidAnnotationCount: 0,
+        orphanAnnotationCount: 0,
+        conflictingAnnotationCount: 0,
+        withheld: { kind: "known", count: 2 }
+      }
+    });
+
+    expect(serializeArchiveFiles(withMetadata)["events.json"]).toBe(serializeArchiveFiles(withoutMetadata)["events.json"]);
+    expect(withMetadata["manifest.json"].moderation).toEqual({
+      annotations: [{ event_id: event.id, status: "banned" }],
+      annotations_status: "complete",
+      invalid_annotation_count: 0,
+      orphan_annotation_count: 0,
+      conflicting_annotation_count: 0,
+      withheld: { kind: "known", count: 2 }
     });
   });
 
