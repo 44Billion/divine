@@ -49,6 +49,31 @@ describe("fetchSnapshotStatus", () => {
 });
 
 describe("redeemSnapshotEvents", () => {
+  it("preserves moderation annotations and terminal withheld metadata", async () => {
+    const event = makeFixtureEvent();
+    const result = await redeemSnapshotEvents({
+      endpointBase: "https://api.divine.video",
+      pubkey: fixturePubkey,
+      enforcementId,
+      signer: new FixtureSigner(),
+      fetcher: async () => json({
+        data: [event],
+        moderation_annotations: { [event.id]: { status: "banned" } },
+        withheld: { complete: true, count: 2 },
+        pagination: { has_more: false, next_cursor: null },
+      }),
+    });
+
+    expect(result.moderation).toEqual({
+      annotations: [{ eventId: event.id, status: "banned" }],
+      annotationsStatus: "complete",
+      invalidAnnotationCount: 0,
+      orphanAnnotationCount: 0,
+      conflictingAnnotationCount: 0,
+      withheld: { kind: "known", count: 2 },
+    });
+  });
+
   it("signs every full page URL including enforcement id and cursor", async () => {
     const signer = new FixtureSigner();
     let page = 0;

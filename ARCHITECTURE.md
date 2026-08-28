@@ -216,6 +216,11 @@ enter the existing archive, media verification, mirror, and republish pipeline.
 The manifest records snapshot provenance, while partial pages remain usable if
 the snapshot expires or becomes unavailable during retrieval.
 
+Additive moderation annotations are accumulated across pages, while the
+withheld-event acknowledgement is accepted only from the terminal page. The
+manifest records supported, incomplete, and unsupported metadata distinctly;
+`events.json` keeps the bare signed events unchanged.
+
 After an archive is built, the same page can mirror its unique source blobs to a
 custom HTTPS Blossom destination with BUD-04 `PUT /mirror`. Destination URLs
 normalize to the domain root because BUD-01 serves every Blossom endpoint there.

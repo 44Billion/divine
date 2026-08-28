@@ -4,7 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { buildArchiveFiles } from "@/lib/exit/archive";
-import { fixturePubkey, makeFixtureEvent } from "@/lib/exit/__fixtures__/exportFixtures";
+import { fixturePubkey, makeFixtureEvent, unsupportedModeration } from "@/lib/exit/__fixtures__/exportFixtures";
 import { openDestinationRelay } from "@/lib/exit/relayConnection";
 
 import { DiscoveryPointerForm } from "./DiscoveryPointerForm";
@@ -17,6 +17,7 @@ const files = buildArchiveFiles({
   sourceEndpoint: "https://api.divine.video",
   pageCount: 1,
   failures: [],
+  moderation: unsupportedModeration,
 });
 
 const signer = {

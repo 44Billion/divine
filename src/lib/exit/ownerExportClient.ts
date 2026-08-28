@@ -6,11 +6,22 @@ import type { NostrSigner } from "@nostrify/nostrify";
 import { walkExportCursor, type CursorWalkProgress } from "./cursorWalk";
 import { exportRetryDelayMs, readExportErrorBody, signedExportGet, validateExportPage, type ExportPage } from "./exportTransport";
 import { isHex64 } from "./hex";
+import type { AnnotationStatus, ExportModeration } from "./moderationMetadata";
 
 export type { ExportPage } from "./exportTransport";
 export type ExportProgress = CursorWalkProgress;
 
 export type ExportFailureCode = "invalid-pubkey" | "bad-cursor" | "expired-cursor" | "auth-required" | "pubkey-mismatch" | "rate-limited" | "server-failure" | "malformed-response" | "network-failure" | "cancelled" | "stalled-cursor" | "page-limit";
+
+export interface OwnerExportPageResponse {
+  data: ExportPage["data"];
+  moderation_annotations?: Record<string, { status: AnnotationStatus }>;
+  withheld?: { complete: false } | { complete: true; count: number };
+  pagination: {
+    next_cursor: string | null;
+    has_more: boolean;
+  };
+}
 
 export class OwnerExportError extends Error {
   constructor(public readonly code: ExportFailureCode, message: string, public readonly status?: number, public readonly retryAfterMs?: number) {
@@ -19,7 +30,14 @@ export class OwnerExportError extends Error {
   }
 }
 
-export interface OwnerExportResult { events: ExportPage["data"]; pageCount: number; failures: OwnerExportError[] }
+export type OwnerExportModeration = ExportModeration;
+
+export interface OwnerExportResult {
+  events: ExportPage["data"];
+  pageCount: number;
+  failures: OwnerExportError[];
+  moderation: OwnerExportModeration;
+}
 
 export interface OwnerExportClientOptions {
   endpointBase: string; pubkey: string; signer: NostrSigner; limit?: number; fetcher?: typeof fetch;
@@ -61,7 +79,7 @@ function malformedMessage(detail: string) {
   return "Divine returned a response this tool could not read.";
 }
 
-async function fetchOwnerPage(input: { url: string; pubkey: string; signer: NostrSigner; fetcher: typeof fetch; signal?: AbortSignal; retryCount: number }) {
+async function fetchOwnerPage(input: { url: string; pubkey: string; signer: NostrSigner; fetcher: typeof fetch; signal?: AbortSignal; retryCount: number }): Promise<ExportPage> {
   const response = await signedExportGet({
     ...input,
     authFailure: () => new OwnerExportError("auth-required", "This export could not be signed. If your account is restricted, appeal first. Otherwise sign in again, then restart the export."),

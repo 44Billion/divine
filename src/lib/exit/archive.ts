@@ -4,6 +4,8 @@
 import type { NostrEvent } from "@nostrify/nostrify";
 
 import { isHex64 } from "./hex";
+import type { OwnerExportModeration } from "./ownerExportClient";
+import type { ModerationAnnotation } from "./moderationMetadata";
 import type { MediaDownloadResult, MediaVerification } from "./mediaDownloader";
 
 export interface ArchiveFailure extends Error {
@@ -17,6 +19,8 @@ export interface MediaReference {
   url: string;
   sha256: string | null;
 }
+
+export type ArchiveWithheld = { complete: false } | { complete: true; count: number };
 
 export interface ArchiveManifest {
   pubkey: string;
@@ -34,6 +38,14 @@ export interface ArchiveManifest {
     enforcement_id: string;
     enforced_at: string | null;
     expires_at: string;
+  };
+  moderation: {
+    annotations: Array<{ event_id: string; status: ModerationAnnotation["status"] }>;
+    annotations_status: "complete" | "incomplete" | "unsupported";
+    invalid_annotation_count: number;
+    orphan_annotation_count: number;
+    conflicting_annotation_count: number;
+    withheld?: ArchiveWithheld;
   };
   media?: MediaSummary;
 }
@@ -174,8 +186,23 @@ export function buildArchiveFiles(input: {
   failures: ArchiveFailure[];
   sourceName?: string;
   snapshot?: ArchiveManifest["snapshot"];
+  moderation?: OwnerExportModeration;
   generatedAt?: Date;
 }): ArchiveFiles {
+  const moderation = input.moderation ?? {
+    annotations: [],
+    annotationsStatus: "unsupported" as const,
+    invalidAnnotationCount: 0,
+    orphanAnnotationCount: 0,
+    conflictingAnnotationCount: 0,
+    withheld: { kind: "unsupported" as const },
+  };
+  const withheld = moderation.withheld.kind === "known"
+    ? { complete: true as const, count: moderation.withheld.count }
+    : moderation.withheld.kind === "unavailable"
+      ? { complete: false as const }
+      : undefined;
+
   return {
     "events.json": input.events,
     "manifest.json": {
@@ -191,6 +218,14 @@ export function buildArchiveFiles(input: {
         status: failure.status
       })),
       ...(input.snapshot ? { snapshot: input.snapshot } : {}),
+      moderation: {
+        annotations: moderation.annotations.map(({ eventId, status }) => ({ event_id: eventId, status })),
+        annotations_status: moderation.annotationsStatus,
+        invalid_annotation_count: moderation.invalidAnnotationCount,
+        orphan_annotation_count: moderation.orphanAnnotationCount,
+        conflicting_annotation_count: moderation.conflictingAnnotationCount,
+        ...(withheld ? { withheld } : {})
+      }
     },
     "media.json": discoverMediaReferences(input.events)
   };
