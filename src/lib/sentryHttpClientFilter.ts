@@ -1,3 +1,5 @@
+import { DIVINE_LOGIN_ORIGIN } from '@/lib/divineLoginOrigin';
+
 type SentryExceptionValue = {
   value?: unknown;
   mechanism?: {
@@ -19,6 +21,19 @@ type SentryEventLike = {
   exception?: {
     values?: SentryExceptionValue[];
   };
+};
+
+type ReplayRecordingEventLike = {
+  data?: {
+    tag?: unknown;
+    payload?: unknown;
+  };
+};
+
+type BreadcrumbLike = {
+  category?: unknown;
+  type?: unknown;
+  data?: Record<string, unknown>;
 };
 
 const MEDIA_HOSTNAME = 'media.divine.video';
@@ -140,6 +155,17 @@ function isFunnelcakeFallbackReportedPath(pathname: string): boolean {
   return false;
 }
 
+function isKeyExportUrl(value: string): boolean {
+  try {
+    const requestUrl = new URL(value);
+    const loginUrl = new URL(DIVINE_LOGIN_ORIGIN);
+    return requestUrl.origin === loginUrl.origin
+      && requestUrl.pathname === '/api/user/export-key';
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Filters raw "HTTP Client Error" events for Funnelcake REST API requests.
  *
@@ -174,6 +200,50 @@ export function shouldDropFunnelcakeHttpClientEvent(event: SentryEventLike): boo
 
   return FUNNELCAKE_RELAY_HOSTNAMES.has(parsedUrl.hostname)
     && parsedUrl.pathname.startsWith('/api/');
+}
+
+export function shouldDropHandledKeyExportHttpClientEvent(event: SentryEventLike): boolean {
+  if (!isHttpClientEvent(event)) {
+    return false;
+  }
+
+  const requestUrl = toSafeString(event.request?.url);
+  if (!requestUrl) {
+    return false;
+  }
+
+  if (!isKeyExportUrl(requestUrl)) {
+    return false;
+  }
+
+  const statusCode = extractStatusCode(event);
+  return statusCode === 401
+    || statusCode === 403
+    || statusCode === 404
+    || statusCode === 429;
+}
+
+export function shouldDropKeyExportBreadcrumb(breadcrumb: BreadcrumbLike): boolean {
+  const requestUrl = toSafeString(breadcrumb.data?.url);
+  return requestUrl ? isKeyExportUrl(requestUrl) : false;
+}
+
+export function shouldDropKeyExportReplayEvent(event: ReplayRecordingEventLike): boolean {
+  if (event.data?.tag !== 'performanceSpan') {
+    return false;
+  }
+
+  const payload = event.data.payload;
+  if (!payload || typeof payload !== 'object') {
+    return false;
+  }
+
+  const { op, description } = payload as { op?: unknown; description?: unknown };
+  if (op !== 'resource.fetch' && op !== 'resource.xhr') {
+    return false;
+  }
+
+  return typeof description === 'string' && isKeyExportUrl(description);
 }
 
 /**

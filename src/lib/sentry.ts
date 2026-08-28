@@ -3,6 +3,9 @@
 
 import * as Sentry from '@sentry/react';
 import {
+  shouldDropHandledKeyExportHttpClientEvent,
+  shouldDropKeyExportBreadcrumb,
+  shouldDropKeyExportReplayEvent,
   shouldDropFunnelcakeHttpClientEvent,
   shouldDropHandledMediaHttpClientEvent,
 } from '@/lib/sentryHttpClientFilter';
@@ -139,10 +142,17 @@ export function initializeSentry() {
       Sentry.replayIntegration({
         maskAllText: false,
         blockAllMedia: false,
+        beforeAddRecordingEvent(event) {
+          return shouldDropKeyExportReplayEvent(event) ? null : event;
+        },
       }),
       Sentry.httpClientIntegration({ failedRequestStatusCodes: [[400, 599]] }),
       Sentry.captureConsoleIntegration({ levels: ['error', 'warn'] }),
     ],
+
+    beforeBreadcrumb(breadcrumb) {
+      return shouldDropKeyExportBreadcrumb(breadcrumb) ? null : breadcrumb;
+    },
 
     // Filter out noise - browser environment errors we can't fix
     ignoreErrors: [
@@ -204,6 +214,10 @@ export function initializeSentry() {
 
     // Don't send PII
     beforeSend(event) {
+      if (shouldDropHandledKeyExportHttpClientEvent(event)) {
+        return null;
+      }
+
       if (shouldDropHandledMediaHttpClientEvent(event)) {
         return null;
       }

@@ -1,8 +1,114 @@
 import { describe, expect, it } from 'vitest';
 import {
+  shouldDropHandledKeyExportHttpClientEvent,
+  shouldDropKeyExportBreadcrumb,
+  shouldDropKeyExportReplayEvent,
   shouldDropFunnelcakeHttpClientEvent,
   shouldDropHandledMediaHttpClientEvent,
 } from '@/lib/sentryHttpClientFilter';
+
+describe('shouldDropHandledKeyExportHttpClientEvent', () => {
+  it.each([401, 403, 404, 429])('drops handled key-export status %s', (statusCode) => {
+    const event = createHttpClientEvent({
+      url: 'https://login.divine.video/api/user/export-key',
+      statusCode,
+    });
+
+    expect(shouldDropHandledKeyExportHttpClientEvent(event)).toBe(true);
+  });
+
+  it('keeps server failures from the key-export endpoint', () => {
+    const event = createHttpClientEvent({
+      url: 'https://login.divine.video/api/user/export-key',
+      statusCode: 503,
+    });
+
+    expect(shouldDropHandledKeyExportHttpClientEvent(event)).toBe(false);
+  });
+
+  it('keeps failures from other login endpoints', () => {
+    const event = createHttpClientEvent({
+      url: 'https://login.divine.video/api/user/change-key',
+      statusCode: 403,
+    });
+
+    expect(shouldDropHandledKeyExportHttpClientEvent(event)).toBe(false);
+  });
+});
+
+describe('shouldDropKeyExportBreadcrumb', () => {
+  it.each(['fetch', 'xhr'])('drops key-export %s breadcrumbs', (category) => {
+    expect(shouldDropKeyExportBreadcrumb({
+      category,
+      type: 'http',
+      data: {
+        url: 'https://login.divine.video/api/user/export-key',
+        status_code: 403,
+      },
+    })).toBe(true);
+  });
+
+  it('keeps breadcrumbs for other login endpoints', () => {
+    expect(shouldDropKeyExportBreadcrumb({
+      category: 'fetch',
+      type: 'http',
+      data: { url: 'https://login.divine.video/api/user/account' },
+    })).toBe(false);
+  });
+
+  it('drops the exact key-export URL even when the breadcrumb shape changes', () => {
+    expect(shouldDropKeyExportBreadcrumb({
+      category: 'request',
+      data: { url: 'https://login.divine.video/api/user/export-key' },
+    })).toBe(true);
+  });
+});
+
+describe('shouldDropKeyExportReplayEvent', () => {
+  it.each(['resource.fetch', 'resource.xhr'])('drops key-export %s spans', (op) => {
+    const event = {
+      data: {
+        tag: 'performanceSpan',
+        payload: {
+          op,
+          description: 'https://login.divine.video/api/user/export-key',
+          data: { statusCode: 403, request: { size: 52 } },
+        },
+      },
+    };
+
+    expect(shouldDropKeyExportReplayEvent(event)).toBe(true);
+  });
+
+  it('keeps other replay network spans', () => {
+    const event = {
+      data: {
+        tag: 'performanceSpan',
+        payload: {
+          op: 'resource.fetch',
+          description: 'https://login.divine.video/api/user/account',
+          data: { statusCode: 403 },
+        },
+      },
+    };
+
+    expect(shouldDropKeyExportReplayEvent(event)).toBe(false);
+  });
+
+  it('keeps non-network replay events', () => {
+    const event = {
+      data: {
+        tag: 'breadcrumb',
+        payload: {
+          op: 'resource.fetch',
+          description: 'https://login.divine.video/api/user/export-key',
+        },
+      },
+    };
+
+    expect(shouldDropKeyExportReplayEvent(event)).toBe(false);
+  });
+});
 
 interface TestEventOptions {
   url?: string;
