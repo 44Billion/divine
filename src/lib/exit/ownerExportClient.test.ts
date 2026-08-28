@@ -474,6 +474,25 @@ describe("exportOwnerEvents", () => {
     expect(result.moderation).toMatchObject({ annotationsStatus: "complete", orphanAnnotationCount: 0 });
   });
 
+  it("keys annotations by the event ID exactly as the archive stores it", async () => {
+    const eventId = "AB".repeat(32);
+    const result = await exportOwnerEvents({
+      endpointBase: "https://api.divine.video",
+      pubkey: fixturePubkey,
+      signer: new FixtureSigner(),
+      fetcher: async () => new Response(JSON.stringify({
+        data: [makeFixtureEvent({ id: eventId })],
+        moderation_annotations: { [eventId]: { status: "quarantined" } },
+        pagination: { next_cursor: null, has_more: false },
+        withheld: { complete: true, count: 0 }
+      }), { status: 200 })
+    });
+
+    expect(result.events[0].id).toBe(eventId);
+    expect(result.moderation.annotations).toEqual([{ eventId, status: "quarantined" }]);
+    expect(result.moderation).toMatchObject({ annotationsStatus: "complete", orphanAnnotationCount: 0 });
+  });
+
   it("keeps valid annotations while qualifying malformed, orphan, and conflicting entries", async () => {
     let requests = 0;
     const result = await exportOwnerEvents({

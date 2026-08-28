@@ -78,19 +78,28 @@ export function parseWithheld(raw: unknown): WithheldResult {
   return { kind: "unavailable" };
 }
 
+// Annotations arrive canonicalised to lower case, but the archive must key them
+// by the event ID exactly as it appears in `events.json`, so the manifest always
+// cross-references the signed events byte for byte.
 export function dropOrphanAnnotations(
   annotations: Map<string, AnnotationStatus>,
   eventIds: ReadonlySet<string>
 ): FilteredAnnotations {
+  const canonicalById = new Map<string, string>();
+  for (const eventId of eventIds) {
+    canonicalById.set(eventId.toLowerCase(), eventId);
+  }
+
   const filtered = new Map<string, AnnotationStatus>();
   let orphanCount = 0;
 
   for (const [eventId, status] of annotations) {
-    if (eventIds.has(eventId)) {
-      filtered.set(eventId, status);
-    } else {
+    const canonical = canonicalById.get(eventId);
+    if (canonical === undefined) {
       orphanCount += 1;
+      continue;
     }
+    filtered.set(canonical, status);
   }
 
   return { annotations: filtered, orphanCount };
