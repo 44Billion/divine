@@ -257,5 +257,23 @@ describe("archive builder", () => {
     });
     expect(completed["media.json"]).toHaveLength(2);
     expect(completed["media-checksums.txt"]).toBe(`${fixtureMediaHash}  media/${fixtureMediaHash}.mp4\n`);
+    expect(completed["media-failures.txt"]).toContain("hash-mismatch\thttps://example.com/wrong");
+  });
+
+  it("omits empty checksums and records failed downloads in a readable report", () => {
+    const archive = buildArchiveFiles({
+      events: [makeFixtureEvent()], pubkey: fixturePubkey, sourceEndpoint: "https://api.divine.video",
+      pageCount: 1, failures: [], generatedAt: new Date("2026-08-12T21:00:00Z"),
+    });
+    const reference = archive["media.json"][0];
+    const completed = completeArchiveMedia(archive, [{
+      references: [reference], source_url: reference.url, expected_sha256: fixtureMediaHash,
+      computed_sha256: null, byte_size: null, content_type: null, archive_path: null,
+      verification: "failed", failure_reason: `${reference.url}: HTTP 503`,
+    }]);
+    const serialized = serializeArchiveFiles(completed);
+
+    expect(serialized).not.toHaveProperty("media-checksums.txt");
+    expect(serialized["media-failures.txt"]).toBe(`failed\t${reference.url}\t${reference.url}: HTTP 503\n`);
   });
 });

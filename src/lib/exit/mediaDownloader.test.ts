@@ -70,13 +70,25 @@ describe("downloadArchiveMedia", () => {
     for (const [result] of cases) expect(result.verification).toBe("failed");
   });
 
-  it("rejects truncated responses and disables automatic redirects", async () => {
+  it("rejects truncated responses and follows redirects for bare requests", async () => {
     const fetcher = vi.fn<typeof fetch>(async () => new Response("short", { headers: { "content-length": "99" } }));
     const [result] = await downloadArchiveMedia({
       references: [reference("https://example.com/truncated")], fetcher, onFile: async () => undefined,
     });
     expect(result).toMatchObject({ verification: "failed" });
-    expect(fetcher.mock.calls[0][1]).toMatchObject({ redirect: "error" });
+    expect(fetcher.mock.calls[0][1]).toMatchObject({ redirect: "follow" });
+  });
+
+  it("accepts a redirected bare candidate when the final bytes match", async () => {
+    const fetcher = vi.fn<typeof fetch>(async (_input, init) => {
+      expect(init).toMatchObject({ redirect: "follow" });
+      return new Response("hello", { headers: { "content-type": "video/mp4" } });
+    });
+    const [result] = await downloadArchiveMedia({
+      references: [reference("https://blossom.example/redirecting-blob")], fetcher, onFile: async () => undefined,
+    });
+
+    expect(result.verification).toBe("verified");
   });
 
   it("retries an auth challenge only for the exact Divine media origin", async () => {
@@ -86,11 +98,29 @@ describe("downloadArchiveMedia", () => {
     const signer = { getPublicKey: vi.fn(), signEvent: vi.fn(async (event) => ({ ...event, id: "a".repeat(64), pubkey: "b".repeat(64), sig: "c".repeat(128) })) };
     await downloadArchiveMedia({ references: [reference("https://media.divine.video/blob")], signer, fetcher: divineFetch, onFile: async () => undefined });
     expect(divineFetch).toHaveBeenCalledTimes(2);
+    expect(divineFetch.mock.calls[0][1]).toMatchObject({ redirect: "follow" });
+    expect(divineFetch.mock.calls[1][1]).toMatchObject({ redirect: "error" });
     expect((divineFetch.mock.calls[1][1]?.headers as Record<string, string>).Authorization).toMatch(/^Nostr /);
 
     const thirdPartyFetch = vi.fn(async () => new Response(null, { status: 401 }));
     await downloadArchiveMedia({ references: [reference("https://media.divine.video.evil.example/blob")], signer, fetcher: thirdPartyFetch, onFile: async () => undefined });
     expect(thirdPartyFetch).toHaveBeenCalledOnce();
+  });
+
+  it("rejects an authorized response that resolves off the Divine media origin", async () => {
+    const redirectedResponse = new Response("hello");
+    Object.defineProperty(redirectedResponse, "url", { value: "https://cdn.example/blob" });
+    const fetcher = vi.fn()
+      .mockResolvedValueOnce(new Response(null, { status: 401 }))
+      .mockResolvedValueOnce(redirectedResponse);
+    const signer = { getPublicKey: vi.fn(), signEvent: vi.fn(async (event) => ({ ...event, id: "a".repeat(64), pubkey: "b".repeat(64), sig: "c".repeat(128) })) };
+
+    const [result] = await downloadArchiveMedia({
+      references: [reference("https://media.divine.video/blob")], signer, fetcher, onFile: async () => undefined,
+    });
+
+    expect(result).toMatchObject({ verification: "failed" });
+    expect(result.failure_reason).toContain("redirected to an untrusted origin");
   });
 });
 

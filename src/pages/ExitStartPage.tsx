@@ -22,6 +22,7 @@ import { ExportSummaryCard } from "@/components/exit/ExportSummaryCard";
 import { DiscoveryPointerForm } from "@/components/exit/DiscoveryPointerForm";
 import { KeySafetyNotice } from "@/components/exit/KeySafetyNotice";
 import { MediaProgressList } from "@/components/exit/MediaProgressList";
+import { MediaExportSummary } from "@/components/exit/MediaExportSummary";
 import { RelayDestinationForm } from "@/components/exit/RelayDestinationForm";
 import { SnapshotRecovery } from "@/components/exit/SnapshotRecovery";
 import { LoginArea } from "@/components/auth/LoginArea";
@@ -366,9 +367,7 @@ export function ExitStartPage() {
 
               <MediaProgressList progress={mediaExport.progress} />
 
-              {mediaExport.state === "complete" && (
-                <p className="text-base font-semibold text-foreground" role="status">Your media archive is saved.</p>
-              )}
+              <MediaExportSummary state={mediaExport.state} summary={mediaExport.summary} results={mediaExport.results} />
 
               {mediaExport.state === "failed" && mediaExport.failure && (
                 <p className="text-base text-destructive" role="alert">{mediaExport.failure}</p>

@@ -194,8 +194,12 @@ The `/exit/start` flow reads raw signed events through the owner-export API and
 builds archive metadata in `src/lib/exit/`. Its media option writes a store-only
 Zip64 archive directly to a user-selected file, downloads one unique blob at a
 time, verifies advertised SHA-256 hashes, and records partial failures without
-changing signed events. Viewer authorization is retried only for the exact
-`https://media.divine.video` origin; third-party media requests remain bare.
+changing signed events. Bare media requests follow content-delivery redirects,
+while requests carrying viewer authorization refuse redirects and are retried
+only for the exact `https://media.divine.video` origin; third-party media
+requests remain bare. The completed archive omits an empty checksum file, adds
+a readable failure report for downloads and quarantined hash mismatches, and
+keeps the final on-screen result aligned with the media actually saved.
 
 The same page shows the signed-in account's full npub and separates hosted,
 local-nsec, and external-signer key ownership. Hosted accounts may export their
