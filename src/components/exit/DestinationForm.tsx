@@ -22,11 +22,29 @@ interface DestinationFormProps {
 function progressLabel(progress: MirrorProgress): string {
   switch (progress.result.verification) {
     case "descriptor-verified": return "Mirrored and confirmed by the destination";
+    case "already-present": return "Already at the destination";
     case "unverified": return "Mirrored without confirmed readback";
     case "hash-mismatch": return "Destination reported a different hash";
     case "skipped": return progress.result.reason ?? "Skipped this source";
     default: return "Could not mirror";
   }
+}
+
+function summaryLabel(summary: MirrorSummary): string {
+  const counts = [
+    [summary.mirrored, "mirrored"],
+    [summary.alreadyPresent, "already there"],
+    [summary.failed, "failed"],
+    [summary.skipped, "skipped"],
+    [summary.unverified, "unverified"],
+  ] as const;
+  const visible = counts
+    .filter(([count]) => count > 0)
+    .map(([count, label]) => `${count} ${label}`);
+  if (visible.length === 0) return "No media needed copying.";
+  if (visible.length === 1) return `${visible[0]}.`;
+  if (visible.length === 2) return `${visible[0]} and ${visible[1]}.`;
+  return `${visible.slice(0, -1).join(", ")}, and ${visible.at(-1)}.`;
 }
 
 export function DestinationForm({ state, progress, summary, failure, onStart }: DestinationFormProps) {
@@ -85,7 +103,7 @@ export function DestinationForm({ state, progress, summary, failure, onStart }: 
             <div>
               <p className="font-semibold text-foreground">Destination copy finished.</p>
               <p className="text-base leading-relaxed text-muted-foreground">
-                {summary.mirrored} mirrored, {summary.failed} failed, {summary.skipped} skipped, and {summary.unverified} unverified.
+                {summaryLabel(summary)}
               </p>
             </div>
           </div>

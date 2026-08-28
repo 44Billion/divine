@@ -24,7 +24,10 @@ const DESTRUCTIVE_KINDS = new Set([5, 62]);
 export function buildDestinationUrlMap(results: MirrorResult[]): Map<string, string> {
   const urls = new Map<string, string>();
   for (const result of results) {
-    if (result.verification !== "descriptor-verified" || !result.destination_url) continue;
+    if (
+      (result.verification !== "descriptor-verified" && result.verification !== "already-present")
+      || !result.destination_url
+    ) continue;
     for (const reference of result.references) {
       urls.set(reference.url, result.destination_url);
     }

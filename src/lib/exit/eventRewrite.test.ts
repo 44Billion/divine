@@ -42,13 +42,18 @@ function mirror(verification: MirrorResult["verification"] = "descriptor-verifie
 }
 
 describe("buildDestinationUrlMap", () => {
-  it("uses only descriptor-verified results and maps every grouped source", () => {
+  it("uses confirmed destination results and maps every grouped source", () => {
     const verified = mirror();
     verified.references.push({ event_id: "e".repeat(64), tag: "thumb", url: `${SOURCE}?thumb=1`, sha256: "c".repeat(64) });
-    const map = buildDestinationUrlMap([verified, mirror("unverified"), mirror("hash-mismatch")]);
+    const alreadyPresent = mirror("already-present");
+    alreadyPresent.references = [{ event_id: ID, tag: "image", url: DESTINATION, sha256: "c".repeat(64) }];
+    alreadyPresent.source_url = DESTINATION;
+    alreadyPresent.destination_url = DESTINATION;
+    const map = buildDestinationUrlMap([verified, alreadyPresent, mirror("unverified"), mirror("hash-mismatch")]);
     expect([...map.entries()]).toEqual([
       [SOURCE, DESTINATION],
       [`${SOURCE}?thumb=1`, DESTINATION],
+      [DESTINATION, DESTINATION],
     ]);
   });
 });
@@ -90,6 +95,14 @@ describe("rewriteEventMedia", () => {
     const result = rewriteEventMedia(event({ content: "unchanged" }), new Map());
     expect(result.changed).toBe(false);
     expect(result.remainingMediaUrls).toBe(1);
+  });
+
+  it("treats an identity mapping as unchanged with no remaining media", () => {
+    const original = event({ content: DESTINATION, tags: [["url", DESTINATION]] });
+    const result = rewriteEventMedia(original, new Map([[DESTINATION, DESTINATION]]));
+
+    expect(result.changed).toBe(false);
+    expect(result.remainingMediaUrls).toBe(0);
   });
 });
 

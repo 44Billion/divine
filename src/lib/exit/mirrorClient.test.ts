@@ -4,7 +4,7 @@ import type { NostrSigner } from "@nostrify/nostrify";
 
 import type { MediaReference } from "./archive";
 import { DestinationError } from "./destination";
-import { mirrorArchiveMedia } from "./mirrorClient";
+import { mirrorArchiveMedia, summarizeMirrorResults } from "./mirrorClient";
 
 const hash = "a".repeat(64);
 const otherHash = "b".repeat(64);
@@ -19,6 +19,10 @@ function reference(url: string, sha256: string | null = hash): MediaReference {
 
 function descriptor(sha256 = hash, size = 5) {
   return { url: `https://blossom.example/${sha256}`, sha256, size, type: "video/mp4" };
+}
+
+function blobHead(size = 5, contentType = "video/mp4") {
+  return new Response(null, { status: 200, headers: { "content-length": String(size), "content-type": contentType } });
 }
 
 function decodeAuthorization(value: string): { tags: string[][] } {
@@ -64,7 +68,7 @@ describe("mirrorArchiveMedia", () => {
       signer,
       fetcher,
     })).rejects.toMatchObject({ code });
-    expect(fetcher).toHaveBeenCalledOnce();
+    expect(fetcher).toHaveBeenCalledTimes(2);
   });
 
   it("describes a canary CORS or network failure honestly", async () => {
@@ -205,13 +209,175 @@ describe("mirrorArchiveMedia", () => {
   });
 
   it("records malformed destination JSON as a file failure", async () => {
+    const fetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response("not json", { status: 200 }))
+      .mockResolvedValueOnce(new Response(null, { status: 404 }));
     const results = await mirrorArchiveMedia({
       destination: "https://blossom.example",
       references: [reference("https://source.example/one")],
       signer,
-      fetcher: vi.fn(async () => new Response("not json", { status: 200 })),
+      fetcher,
     });
     expect(results[0]).toMatchObject({ verification: "failed", reason: "The destination returned an invalid blob descriptor." });
+  });
+
+  it("reports a refused mirror as already present when the destination serves the blob", async () => {
+    const source = `https://blossom.example/${hash}.jpg`;
+    const fetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response(null, { status: 409 }))
+      .mockResolvedValueOnce(blobHead());
+
+    const results = await mirrorArchiveMedia({
+      destination: "https://blossom.example", references: [reference(source)], signer, fetcher,
+    });
+
+    expect(results[0]).toMatchObject({
+      verification: "already-present",
+      source_url: source,
+      destination_url: source,
+      destination_sha256: hash,
+    });
+    expect(fetcher.mock.calls[1]).toEqual([
+      `https://blossom.example/${hash}`,
+      expect.objectContaining({ method: "HEAD", redirect: "follow" }),
+    ]);
+  });
+
+  it("uses the canonical destination URL when an existing blob came from another origin", async () => {
+    const fetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response(null, { status: 409 }))
+      .mockResolvedValueOnce(blobHead());
+
+    const results = await mirrorArchiveMedia({
+      destination: "https://blossom.example", references: [reference("https://source.example/one.jpg")], signer, fetcher,
+    });
+
+    expect(results[0]).toMatchObject({
+      verification: "already-present",
+      destination_url: `https://blossom.example/${hash}`,
+    });
+  });
+
+  it("uses the canonical destination URL when a same-origin source names another blob", async () => {
+    const fetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response(null, { status: 409 }))
+      .mockResolvedValueOnce(blobHead());
+
+    const results = await mirrorArchiveMedia({
+      destination: "https://blossom.example",
+      references: [reference(`https://blossom.example/${otherHash}.jpg`)],
+      signer,
+      fetcher,
+    });
+
+    expect(results[0]).toMatchObject({
+      verification: "already-present",
+      destination_url: `https://blossom.example/${hash}`,
+    });
+  });
+
+  it("preserves a matching destination URL from anywhere in a hash group", async () => {
+    const destinationSource = `https://blossom.example/${hash}.jpg`;
+    const fetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response(null, { status: 409 }))
+      .mockResolvedValueOnce(blobHead());
+
+    const results = await mirrorArchiveMedia({
+      destination: "https://blossom.example",
+      references: [reference("https://source.example/one.jpg"), reference(destinationSource)],
+      signer,
+      fetcher,
+    });
+
+    expect(results[0]).toMatchObject({
+      verification: "already-present",
+      destination_url: destinationSource,
+    });
+  });
+
+  it("rejects a generic HTML catch-all as proof that the blob exists", async () => {
+    const fetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response(null, { status: 405 }))
+      .mockResolvedValueOnce(blobHead(100, "text/html"));
+
+    await expect(mirrorArchiveMedia({
+      destination: "https://website.example",
+      references: [reference("https://source.example/one")],
+      signer,
+      fetcher,
+    })).rejects.toMatchObject({ code: "no-mirror-support" });
+  });
+
+  it("requires BUD-01 metadata before reporting a blob as already present", async () => {
+    const fetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response(null, { status: 409 }))
+      .mockResolvedValueOnce(new Response(null, { status: 200 }));
+
+    const results = await mirrorArchiveMedia({
+      destination: "https://blossom.example",
+      references: [reference("https://source.example/one")],
+      signer,
+      fetcher,
+    });
+
+    expect(results[0].verification).toBe("failed");
+  });
+
+  it("keeps a refused mirror failed when the destination does not serve the blob", async () => {
+    const fetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response(null, { status: 409 }))
+      .mockResolvedValueOnce(new Response(null, { status: 404 }));
+
+    const results = await mirrorArchiveMedia({
+      destination: "https://blossom.example", references: [reference("https://source.example/one")], signer, fetcher,
+    });
+
+    expect(results[0].verification).toBe("failed");
+  });
+
+  it("does not fail the canary when a refused blob is already present", async () => {
+    const fetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response(null, { status: 403 }))
+      .mockResolvedValueOnce(blobHead());
+
+    await expect(mirrorArchiveMedia({
+      destination: "https://blossom.example", references: [reference("https://source.example/one")], signer, fetcher,
+    })).resolves.toMatchObject([{ verification: "already-present" }]);
+  });
+
+  it("keeps the canary for the first blob that is not already present", async () => {
+    const fetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response(null, { status: 403 }))
+      .mockResolvedValueOnce(blobHead())
+      .mockResolvedValueOnce(new Response(null, { status: 403 }))
+      .mockResolvedValueOnce(new Response(null, { status: 404 }));
+
+    await expect(mirrorArchiveMedia({
+      destination: "https://blossom.example",
+      references: [reference("https://source.example/one"), reference("https://source.example/two", otherHash)],
+      signer,
+      fetcher,
+    })).rejects.toMatchObject({ code: "auth-required" });
+  });
+
+  it("does not probe after a hash mismatch", async () => {
+    const fetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response(JSON.stringify(descriptor(otherHash)), { status: 200 }));
+
+    const results = await mirrorArchiveMedia({
+      destination: "https://blossom.example", references: [reference("https://source.example/one")], signer, fetcher,
+    });
+
+    expect(results[0].verification).toBe("hash-mismatch");
+    expect(fetcher).toHaveBeenCalledOnce();
+  });
+
+  it("summarizes already-present blobs separately from mirrored and failed blobs", () => {
+    expect(summarizeMirrorResults([
+      { references: [], source_url: "one", destination_url: "one", expected_sha256: hash, destination_sha256: hash, byte_size: null, verification: "already-present" },
+      { references: [], source_url: "two", destination_url: "two", expected_sha256: hash, destination_sha256: hash, byte_size: 5, verification: "descriptor-verified" },
+      { references: [], source_url: "three", destination_url: null, expected_sha256: hash, destination_sha256: null, byte_size: null, verification: "failed" },
+    ])).toEqual({ mirrored: 1, alreadyPresent: 1, failed: 1, skipped: 0, unverified: 0 });
   });
 
   it("throws a typed destination error after exhausted canary rate limits", async () => {
