@@ -53,6 +53,7 @@ export interface ArchiveFiles {
   "manifest.json": ArchiveManifest;
   "media.json": MediaReference[] | ArchivedMediaReference[];
   "media-checksums.txt"?: string;
+  "media-failures.txt"?: string;
 }
 
 const URL_TAGS = new Set(["url", "image", "thumb", "thumbnail"]);
@@ -208,19 +209,35 @@ export function summarizeMedia(results: MediaDownloadResult[]): MediaSummary {
   };
 }
 
-export function createMediaChecksums(results: MediaDownloadResult[]): string {
+export function createMediaChecksums(results: MediaDownloadResult[]): string | null {
   const lines = results
     .filter((result) => result.archive_path && (result.verification === "verified" || result.verification === "unverified"))
     .map((result) => `${result.computed_sha256}  ${result.archive_path}`);
-  return lines.length ? `${lines.join("\n")}\n` : "";
+  return lines.length ? `${lines.join("\n")}\n` : null;
+}
+
+export function createMediaFailureReport(results: MediaDownloadResult[]): string | null {
+  const lines = results.flatMap((result) => {
+    if (result.verification === "failed") {
+      return [`failed\t${result.source_url}\t${result.failure_reason ?? "Download failed"}`];
+    }
+    if (result.verification === "hash-mismatch") {
+      return [`hash-mismatch\t${result.source_url}\texpected ${result.expected_sha256 ?? "unknown"}; computed ${result.computed_sha256 ?? "unknown"}`];
+    }
+    return [];
+  });
+  return lines.length ? `${lines.join("\n")}\n` : null;
 }
 
 export function completeArchiveMedia(files: ArchiveFiles, results: MediaDownloadResult[]): ArchiveFiles {
+  const checksums = createMediaChecksums(results);
+  const failures = createMediaFailureReport(results);
   return {
-    ...files,
+    "events.json": files["events.json"],
     "manifest.json": { ...files["manifest.json"], media: summarizeMedia(results) },
     "media.json": mergeMediaResults(results),
-    "media-checksums.txt": createMediaChecksums(results),
+    ...(checksums ? { "media-checksums.txt": checksums } : {}),
+    ...(failures ? { "media-failures.txt": failures } : {}),
   };
 }
 
@@ -231,5 +248,6 @@ export function serializeArchiveFiles(files: ArchiveFiles): Record<string, strin
     "media.json": `${JSON.stringify(files["media.json"], null, 2)}\n`
   };
   if (files["media-checksums.txt"] !== undefined) serialized["media-checksums.txt"] = files["media-checksums.txt"];
+  if (files["media-failures.txt"] !== undefined) serialized["media-failures.txt"] = files["media-failures.txt"];
   return serialized;
 }

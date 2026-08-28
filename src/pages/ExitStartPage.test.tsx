@@ -198,25 +198,51 @@ describe("ExitStartPage", () => {
     expect(screen.getByText(/cannot safely assemble one large media archive/)).toBeInTheDocument();
   });
 
-  it("streams media to a selected file and reports a quarantined mismatch", async () => {
+  it("streams media to a selected file and reports a quarantined mismatch as degraded", async () => {
     mockUseCurrentUser.mockReturnValue(signedIn());
     vi.stubGlobal("fetch", createFixtureFetch("one-page"));
     const write = vi.fn(async () => undefined);
     const close = vi.fn(async () => undefined);
     const abort = vi.fn(async () => undefined);
-    vi.stubGlobal("showSaveFilePicker", vi.fn(async () => ({
+    const showSaveFilePicker = vi.fn(async () => ({
       createWritable: async () => ({ write, close, abort }),
-    })));
+    }));
+    vi.stubGlobal("showSaveFilePicker", showSaveFilePicker);
     render(<TestApp><ExitStartPage /></TestApp>);
     await userEvent.click(screen.getByRole("button", { name: /Create my archive/ }));
     await waitFor(() => expect(screen.getByText(/Your archive is ready/)).toBeInTheDocument());
     vi.stubGlobal("fetch", vi.fn(async () => new Response("hello", { headers: { "content-type": "video/mp4" } })));
     await userEvent.click(screen.getByRole("button", { name: /Save media archive/ }));
-    await waitFor(() => expect(screen.getByText("Your media archive is saved.")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("0 of 1 files were saved as usable media.")).toBeInTheDocument());
     expect(screen.getByText(/Saved separately because the hash did not match/)).toBeInTheDocument();
+    expect(screen.queryByText("Your media archive is saved.")).not.toBeInTheDocument();
+    expect(showSaveFilePicker).toHaveBeenCalledWith(expect.objectContaining({
+      suggestedName: `divine-export-${fixturePubkey}-media.zip`,
+    }));
     expect(write).toHaveBeenCalled();
     expect(close).toHaveBeenCalledOnce();
     expect(abort).not.toHaveBeenCalled();
+  });
+
+  it("reports when the archive saves no media and omits the success message", async () => {
+    mockUseCurrentUser.mockReturnValue(signedIn());
+    vi.stubGlobal("fetch", createFixtureFetch("one-page"));
+    const write = vi.fn(async () => undefined);
+    const close = vi.fn(async () => undefined);
+    vi.stubGlobal("showSaveFilePicker", vi.fn(async () => ({
+      createWritable: async () => ({ write, close, abort: vi.fn(async () => undefined) }),
+    })));
+    render(<TestApp><ExitStartPage /></TestApp>);
+    await userEvent.click(screen.getByRole("button", { name: /Create my archive/ }));
+    await waitFor(() => expect(screen.getByText(/Your archive is ready/)).toBeInTheDocument());
+    vi.stubGlobal("fetch", vi.fn(async () => { throw new TypeError("offline"); }));
+
+    await userEvent.click(screen.getByRole("button", { name: /Save media archive/ }));
+
+    await waitFor(() => expect(screen.getByText(/No media was saved/)).toBeInTheDocument());
+    expect(screen.queryByText("Your media archive is saved.")).not.toBeInTheDocument();
+    expect(screen.getByText(/offline/)).toBeInTheDocument();
+    expect(close).toHaveBeenCalledOnce();
   });
 
   it("uses the active Funnelcake environment", async () => {

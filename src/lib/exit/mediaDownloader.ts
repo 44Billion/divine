@@ -60,16 +60,20 @@ function hex(bytes: ArrayBuffer): string {
 async function fetchCandidate(url: string, expectedHash: string | null, options: Pick<DownloadOptions, "fetcher" | "signer" | "signal">) {
   const fetcher = options.fetcher ?? fetch;
   const request = async (authorization?: string | null) => fetcher(url, {
-    method: "GET", signal: options.signal, redirect: "error",
+    method: "GET", signal: options.signal, redirect: authorization ? "error" : "follow",
     headers: authorization ? { Authorization: authorization } : undefined,
   });
   let response = await request();
+  let usedAuthorization = false;
   if ((response.status === 401 || response.status === 403) && isDivineMediaOrigin(url)) {
     const auth = await createMediaViewerAuthHeader({ signer: options.signer, url, sha256: expectedHash ?? undefined });
-    if (auth) response = await request(auth);
+    if (auth) {
+      response = await request(auth);
+      usedAuthorization = true;
+    }
   }
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  if (!isDivineMediaOrigin(response.url || url) && isDivineMediaOrigin(url)) throw new Error("Divine media redirected to an untrusted origin");
+  if (usedAuthorization && !isDivineMediaOrigin(response.url || url)) throw new Error("Divine media redirected to an untrusted origin");
   const bytes = new Uint8Array(await response.arrayBuffer());
   const advertisedSize = response.headers.get("content-length");
   if (advertisedSize && Number(advertisedSize) !== bytes.length) throw new Error("Response byte count did not match Content-Length");
