@@ -183,7 +183,7 @@ describe("ExitStartPage", () => {
     await userEvent.click(screen.getByRole("button", { name: "Copy my media" }));
 
     await waitFor(() => expect(screen.getByText("Destination copy finished.")).toBeInTheDocument());
-    expect(screen.getByRole("status")).toHaveTextContent("1 mirrored, 0 failed, 0 skipped, and 0 unverified.");
+    expect(screen.getByRole("status")).toHaveTextContent("1 mirrored.");
     expect(screen.getByRole("heading", { name: "Move your posts" })).toBeInTheDocument();
     expect(screen.getByLabelText("Relay URL")).toBeInTheDocument();
   });

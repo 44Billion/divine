@@ -8,7 +8,7 @@ import { createBlossomUploadAuthHeader } from "@/lib/blossomAuth";
 import type { MediaReference } from "./archive";
 import { DestinationError } from "./destination";
 
-export type MirrorVerification = "descriptor-verified" | "unverified" | "hash-mismatch" | "failed" | "skipped";
+export type MirrorVerification = "descriptor-verified" | "already-present" | "unverified" | "hash-mismatch" | "failed" | "skipped";
 
 export interface MirrorResult {
   references: MediaReference[];
@@ -29,6 +29,7 @@ export interface MirrorProgress {
 
 export interface MirrorSummary {
   mirrored: number;
+  alreadyPresent: number;
   failed: number;
   skipped: number;
   unverified: number;
@@ -204,6 +205,40 @@ async function verifyReadback(
       : "The source did not advertise a hash, so the destination copy could not be compared." };
 }
 
+async function probeExistingBlob(
+  references: MediaReference[],
+  sha256: string,
+  options: MirrorOptions,
+): Promise<MirrorResult | null> {
+  const canonicalUrl = `${options.destination}/${sha256.toLowerCase()}`;
+  try {
+    const response = await (options.fetcher ?? fetch)(canonicalUrl, {
+      method: "HEAD",
+      signal: options.signal,
+      redirect: "follow",
+    });
+    if (!response.ok) return null;
+    const sourceUrl = references[0].url;
+    const destinationUrl = new URL(sourceUrl).origin === new URL(options.destination).origin
+      ? sourceUrl
+      : canonicalUrl;
+    const size = response.headers.get("content-length");
+    const byteSize = size === null ? null : Number(size);
+    return {
+      references,
+      source_url: sourceUrl,
+      destination_url: destinationUrl,
+      expected_sha256: sha256,
+      destination_sha256: sha256.toLowerCase(),
+      byte_size: byteSize !== null && Number.isFinite(byteSize) ? byteSize : null,
+      verification: "already-present",
+    };
+  } catch {
+    if (options.signal?.aborted) throw new DOMException("Mirror cancelled", "AbortError");
+    return null;
+  }
+}
+
 async function mirrorOne(
   references: MediaReference[],
   expectedHash: string,
@@ -211,15 +246,21 @@ async function mirrorOne(
 ): Promise<{ result: MirrorResult; destinationError: DestinationError | null }> {
   const response = await requestMirror(references, expectedHash, options);
   if (response instanceof DestinationError) {
+    const existing = await probeExistingBlob(references, expectedHash, options);
+    if (existing) return { result: existing, destinationError: null };
     return { result: failedResult(references, "failed", response.message), destinationError: response };
   }
   const destinationError = response.status === 429
     ? new DestinationError("rate-limited", `${options.destination} is rate limiting media copies. Try again later.`, 429)
     : destinationFailure(response.status, options.destination);
   if (destinationError) {
+    const existing = await probeExistingBlob(references, expectedHash, options);
+    if (existing) return { result: existing, destinationError: null };
     return { result: failedResult(references, "failed", destinationError.message), destinationError };
   }
   if (!response.ok) {
+    const existing = await probeExistingBlob(references, expectedHash, options);
+    if (existing) return { result: existing, destinationError: null };
     return {
       result: failedResult(references, "failed", `The destination refused this file (HTTP ${response.status}).${serverReason(response)}`),
       destinationError: null,
@@ -227,6 +268,8 @@ async function mirrorOne(
   }
   const descriptor = await readDescriptor(response);
   if (!descriptor) {
+    const existing = await probeExistingBlob(references, expectedHash, options);
+    if (existing) return { result: existing, destinationError: null };
     return { result: failedResult(references, "failed", "The destination returned an invalid blob descriptor."), destinationError: null };
   }
   if (expectedHash && descriptor.sha256 !== expectedHash.toLowerCase()) {
@@ -270,6 +313,7 @@ export async function mirrorArchiveMedia(options: MirrorOptions): Promise<Mirror
 export function summarizeMirrorResults(results: MirrorResult[]): MirrorSummary {
   return {
     mirrored: results.filter((result) => result.verification === "descriptor-verified").length,
+    alreadyPresent: results.filter((result) => result.verification === "already-present").length,
     failed: results.filter((result) => result.verification === "failed" || result.verification === "hash-mismatch").length,
     skipped: results.filter((result) => result.verification === "skipped").length,
     unverified: results.filter((result) => result.verification === "unverified").length,

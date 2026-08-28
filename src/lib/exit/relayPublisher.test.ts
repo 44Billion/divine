@@ -125,6 +125,27 @@ describe("publishArchiveEvents", () => {
     });
   });
 
+  it("publishes destination-hosted media unchanged on a repeat run", async () => {
+    const signer = makeSigner();
+    const relay = fakeRelay();
+    const video = makeEvent("1", { kind: 34236, content: DESTINATION_MEDIA, tags: [["url", DESTINATION_MEDIA]] });
+    const alreadyPresent = mirrorResult(DESTINATION_MEDIA, DESTINATION_MEDIA);
+    alreadyPresent.verification = "already-present";
+
+    const results = await publishArchiveEvents({
+      destination: RELAY,
+      events: [video],
+      mirrorResults: [alreadyPresent],
+      signer,
+      relayFactory: () => relay,
+    });
+
+    expect(results).toMatchObject([{ status: "unchanged", remaining_media_urls: 0 }]);
+    expect(relay.published).toEqual([video]);
+    expect(signer.signEvent).not.toHaveBeenCalled();
+    expect(summarizePublishResults(results).remainingMediaUrls).toBe(0);
+  });
+
   it("advances an addressable event changed only by reference rewriting", async () => {
     const signer = makeSigner();
     const relay = fakeRelay();
