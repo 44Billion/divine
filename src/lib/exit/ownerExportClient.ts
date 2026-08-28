@@ -145,6 +145,7 @@ export async function exportOwnerEvents(options: OwnerExportClientOptions): Prom
       } else {
         annotationPagesAvailable += 1;
         invalidAnnotationCount += page.moderationAnnotations.invalidCount;
+        conflictingAnnotationCount += page.moderationAnnotations.conflictingCount;
         for (const [eventId, status] of page.moderationAnnotations.annotations) {
           const previous = annotations.get(eventId);
           if (previous && previous !== status) {

@@ -526,6 +526,30 @@ describe("exportOwnerEvents", () => {
     });
   });
 
+  it("qualifies conflicting same-page annotation keys that differ only by case", async () => {
+    const eventId = "ab".repeat(32);
+    const result = await exportOwnerEvents({
+      endpointBase: "https://api.divine.video",
+      pubkey: fixturePubkey,
+      signer: new FixtureSigner(),
+      fetcher: async () => new Response(JSON.stringify({
+        data: [makeFixtureEvent({ id: eventId })],
+        moderation_annotations: {
+          [eventId]: { status: "banned" },
+          [eventId.toUpperCase()]: { status: "quarantined" }
+        },
+        pagination: { next_cursor: null, has_more: false },
+        withheld: { complete: true, count: 0 }
+      }), { status: 200 })
+    });
+
+    expect(result.moderation.annotations).toEqual([{ eventId, status: "banned" }]);
+    expect(result.moderation).toMatchObject({
+      annotationsStatus: "incomplete",
+      conflictingAnnotationCount: 1
+    });
+  });
+
   it("rejects invalid pubkeys before making a request", async () => {
     await expect(
       exportOwnerEvents({

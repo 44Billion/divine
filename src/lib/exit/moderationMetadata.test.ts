@@ -35,6 +35,19 @@ describe("moderation metadata", () => {
     ]);
   });
 
+  it("reports conflicting statuses whose event IDs differ only by case", () => {
+    const eventId = "ab".repeat(32);
+    const result = parseAnnotations({
+      [eventId]: { status: "banned" },
+      [eventId.toUpperCase()]: { status: "quarantined" }
+    });
+
+    expect(result).toMatchObject({ kind: "available", conflictingCount: 1 });
+    expect(result.kind === "available" && Array.from(result.annotations)).toEqual([
+      [eventId, "banned"]
+    ]);
+  });
+
   it("distinguishes an absent annotation field from an empty supported field", () => {
     expect(parseAnnotations(undefined)).toEqual({ kind: "unsupported" });
     expect(parseAnnotations({})).toMatchObject({ kind: "available", invalidCount: 0 });

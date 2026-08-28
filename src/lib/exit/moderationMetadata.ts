@@ -13,6 +13,7 @@ export type AnnotationMetadata =
       kind: "available";
       annotations: Map<string, AnnotationStatus>;
       invalidCount: number;
+      conflictingCount: number;
     };
 
 export type WithheldResult =
@@ -30,11 +31,12 @@ export function parseAnnotations(raw: unknown): AnnotationMetadata {
     return { kind: "unsupported" };
   }
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
-    return { kind: "available", annotations: new Map(), invalidCount: 1 };
+    return { kind: "available", annotations: new Map(), invalidCount: 1, conflictingCount: 0 };
   }
 
   const annotations = new Map<string, AnnotationStatus>();
   let invalidCount = 0;
+  let conflictingCount = 0;
 
   for (const [eventId, value] of Object.entries(raw)) {
     if (!isHex64(eventId) || !value || typeof value !== "object" || Array.isArray(value)) {
@@ -47,12 +49,16 @@ export function parseAnnotations(raw: unknown): AnnotationMetadata {
       invalidCount += 1;
       continue;
     }
-    // `isHex64` accepts either case, so canonicalise before the key is compared
-    // against event IDs, the way the media hashes in `archive.ts` are.
-    annotations.set(eventId.toLowerCase(), status);
+    const normalizedEventId = eventId.toLowerCase();
+    const previous = annotations.get(normalizedEventId);
+    if (previous && previous !== status) {
+      conflictingCount += 1;
+      continue;
+    }
+    annotations.set(normalizedEventId, status);
   }
 
-  return { kind: "available", annotations, invalidCount };
+  return { kind: "available", annotations, invalidCount, conflictingCount };
 }
 
 export function parseWithheld(raw: unknown): WithheldResult {
