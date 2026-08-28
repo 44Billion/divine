@@ -215,6 +215,16 @@ function isDestinationBlobUrl(sourceUrl: string, destination: string, sha256: st
   }
 }
 
+function readBlobHeadSize(response: Response): number | null {
+  if (!response.ok) return null;
+  const contentType = response.headers.get("content-type")?.split(";", 1)[0].trim().toLowerCase();
+  if (!contentType || contentType === "text/html" || contentType === "application/xhtml+xml") return null;
+  const contentLength = response.headers.get("content-length");
+  if (contentLength === null || contentLength.trim() === "") return null;
+  const byteSize = Number(contentLength);
+  return Number.isSafeInteger(byteSize) && byteSize >= 0 ? byteSize : null;
+}
+
 async function probeExistingBlob(
   references: MediaReference[],
   sha256: string,
@@ -227,20 +237,19 @@ async function probeExistingBlob(
       signal: options.signal,
       redirect: "follow",
     });
-    if (!response.ok) return null;
+    const byteSize = readBlobHeadSize(response);
+    if (byteSize === null) return null;
     const sourceUrl = references[0].url;
-    const destinationUrl = isDestinationBlobUrl(sourceUrl, options.destination, sha256)
-      ? sourceUrl
-      : canonicalUrl;
-    const size = response.headers.get("content-length");
-    const byteSize = size === null ? null : Number(size);
+    const destinationUrl = references.find((reference) =>
+      isDestinationBlobUrl(reference.url, options.destination, sha256)
+    )?.url ?? canonicalUrl;
     return {
       references,
       source_url: sourceUrl,
       destination_url: destinationUrl,
       expected_sha256: sha256,
       destination_sha256: sha256.toLowerCase(),
-      byte_size: byteSize !== null && Number.isFinite(byteSize) ? byteSize : null,
+      byte_size: byteSize,
       verification: "already-present",
     };
   } catch {
