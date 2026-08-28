@@ -191,11 +191,7 @@ and drawer UI. `vite-plugin-pwa` generates the PWA service worker.
 ### Account Archive Export
 
 The `/exit/start` flow reads raw signed events through the owner-export API and
-builds archive metadata in `src/lib/exit/`. Additive moderation annotations are
-accumulated across pages, while the withheld-event acknowledgement is accepted
-only from the terminal page. The manifest records supported, incomplete, and
-unsupported metadata distinctly; `events.json` keeps the bare signed events
-unchanged. Its media option writes a store-only
+builds archive metadata in `src/lib/exit/`. Its media option writes a store-only
 Zip64 archive directly to a user-selected file, downloads one unique blob at a
 time, verifies advertised SHA-256 hashes, and records partial failures without
 changing signed events. Viewer authorization is retried only for the exact
@@ -219,6 +215,11 @@ NIP-98 `u` tag includes the enforcement id and opaque cursor. Recovered events
 enter the existing archive, media verification, mirror, and republish pipeline.
 The manifest records snapshot provenance, while partial pages remain usable if
 the snapshot expires or becomes unavailable during retrieval.
+
+Additive moderation annotations are accumulated across pages, while the
+withheld-event acknowledgement is accepted only from the terminal page. The
+manifest records supported, incomplete, and unsupported metadata distinctly;
+`events.json` keeps the bare signed events unchanged.
 
 After an archive is built, the same page can mirror its unique source blobs to a
 custom HTTPS Blossom destination with BUD-04 `PUT /mirror`. Destination URLs
