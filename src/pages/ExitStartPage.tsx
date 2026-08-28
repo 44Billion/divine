@@ -226,6 +226,7 @@ export function ExitStartPage() {
         sourceName: "Divine pre-ban snapshot",
         pageCount: result.pageCount,
         failures: result.failures,
+        moderation: result.moderation,
         snapshot: {
           enforcement_id: status.enforcement_id,
           enforced_at: status.enforced_at,

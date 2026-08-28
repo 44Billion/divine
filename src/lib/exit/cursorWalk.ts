@@ -4,6 +4,7 @@
 import type { NostrEvent } from "@nostrify/nostrify";
 
 import type { ExportPage } from "./exportTransport";
+import { dropOrphanAnnotations, type AnnotationStatus, type ExportModeration, type WithheldResult } from "./moderationMetadata";
 
 export interface CursorFailure extends Error {
   code: string;
@@ -28,7 +29,7 @@ export async function walkExportCursor<TFailure extends CursorFailure>(input: {
   maxRateLimitRetries?: number;
   maxPages?: number;
   onProgress?: (progress: CursorWalkProgress) => void;
-}): Promise<{ events: NostrEvent[]; pageCount: number; failures: TFailure[] }> {
+}): Promise<{ events: NostrEvent[]; pageCount: number; failures: TFailure[]; moderation: ExportModeration }> {
   const events: NostrEvent[] = [];
   const failures: TFailure[] = [];
   const usedCursors = new Set<string>();
@@ -41,23 +42,66 @@ export async function walkExportCursor<TFailure extends CursorFailure>(input: {
   let pagesFetched = 0;
   let retryCount = 0;
   let pageRetries = 0;
+  const annotations = new Map<string, AnnotationStatus>();
+  let annotationPagesAvailable = 0;
+  let annotationPagesUnsupported = 0;
+  let invalidAnnotationCount = 0;
+  let conflictingAnnotationCount = 0;
+
+  function buildResult(withheld: WithheldResult) {
+    const filtered = dropOrphanAnnotations(annotations, new Set(events.map((event) => event.id)));
+    const annotationsStatus = annotationPagesAvailable === 0
+      ? "unsupported" as const
+      : annotationPagesUnsupported > 0 || invalidAnnotationCount > 0 || filtered.orphanCount > 0 || conflictingAnnotationCount > 0
+        ? "incomplete" as const
+        : "complete" as const;
+
+    return {
+      events,
+      pageCount: pagesFetched,
+      failures,
+      moderation: {
+        annotations: Array.from(filtered.annotations, ([eventId, status]) => ({ eventId, status })),
+        annotationsStatus,
+        invalidAnnotationCount,
+        orphanAnnotationCount: filtered.orphanCount,
+        conflictingAnnotationCount,
+        withheld,
+      },
+    };
+  }
 
   for (;;) {
     try {
       const page = await input.fetchPage(cursor, pageRetries);
       pagesFetched += 1;
       events.push(...page.data);
+      if (page.moderationAnnotations.kind === "unsupported") {
+        annotationPagesUnsupported += 1;
+      } else {
+        annotationPagesAvailable += 1;
+        invalidAnnotationCount += page.moderationAnnotations.invalidCount;
+        conflictingAnnotationCount += page.moderationAnnotations.conflictingCount;
+        for (const [eventId, status] of page.moderationAnnotations.annotations) {
+          const previous = annotations.get(eventId);
+          if (previous && previous !== status) {
+            conflictingAnnotationCount += 1;
+            continue;
+          }
+          annotations.set(eventId, status);
+        }
+      }
       pageRetries = 0;
       input.onProgress?.({ pagesFetched, eventsFetched: events.length, retryCount });
-      if (!page.pagination.has_more) return { events, pageCount: pagesFetched, failures };
+      if (!page.pagination.has_more) return buildResult(page.withheld);
       if (!page.pagination.next_cursor) throw input.makeFailure("malformed-response");
       if (usedCursors.has(page.pagination.next_cursor)) {
         failures.push(input.makeFailure("stalled-cursor"));
-        return { events, pageCount: pagesFetched, failures };
+        return buildResult({ kind: "unavailable" });
       }
       if (pagesFetched >= maxPages) {
         failures.push(input.makeFailure("page-limit", maxPages));
-        return { events, pageCount: pagesFetched, failures };
+        return buildResult({ kind: "unavailable" });
       }
       usedCursors.add(page.pagination.next_cursor);
       cursor = page.pagination.next_cursor;
@@ -74,7 +118,7 @@ export async function walkExportCursor<TFailure extends CursorFailure>(input: {
       failures.push(failure);
       // A completed page is still useful. Keep it and report why the walk
       // stopped instead of discarding data already recovered.
-      if (events.length > 0) return { events, pageCount: pagesFetched, failures };
+      if (events.length > 0) return buildResult({ kind: "unavailable" });
       throw failure;
     }
   }

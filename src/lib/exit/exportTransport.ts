@@ -6,9 +6,12 @@ import type { NostrEvent, NostrSigner } from "@nostrify/nostrify";
 import { createNip98AuthHeader } from "@/lib/nip98Auth";
 
 import { isHex64 } from "./hex";
+import { parseAnnotations, parseWithheld, type AnnotationMetadata, type WithheldResult } from "./moderationMetadata";
 
 export interface ExportPage {
   data: NostrEvent[];
+  moderationAnnotations: AnnotationMetadata;
+  withheld: WithheldResult;
   pagination: {
     next_cursor: string | null;
     has_more: boolean;
@@ -75,7 +78,13 @@ export function validateExportPage(
     return event as NostrEvent;
   });
 
-  return { data, pagination: { has_more: candidate.pagination.has_more, next_cursor: nextCursor ?? null } };
+  const metadata = value as { moderation_annotations?: unknown; withheld?: unknown };
+  return {
+    data,
+    moderationAnnotations: parseAnnotations(metadata.moderation_annotations),
+    withheld: parseWithheld(metadata.withheld),
+    pagination: { has_more: candidate.pagination.has_more, next_cursor: nextCursor ?? null },
+  };
 }
 
 export async function readExportErrorBody(response: Response): Promise<string> {

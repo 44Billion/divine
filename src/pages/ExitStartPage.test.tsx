@@ -151,6 +151,8 @@ describe("ExitStartPage", () => {
       }), { status: 200, headers: { "content-type": "application/json" } }))
       .mockResolvedValueOnce(new Response(JSON.stringify({
         data: [makeFixtureEvent()],
+        moderation_annotations: { [makeFixtureEvent().id]: { status: "banned" } },
+        withheld: { complete: true, count: 1 },
         pagination: { next_cursor: null, has_more: false },
       }), { status: 200, headers: { "content-type": "application/json" } }));
     vi.stubGlobal("fetch", fetcher);
@@ -159,8 +161,10 @@ describe("ExitStartPage", () => {
     await userEvent.click(screen.getByRole("button", { name: "Check for a snapshot" }));
     await userEvent.click(await screen.findByRole("button", { name: "Recover snapshot" }));
 
-    await waitFor(() => expect(screen.getByText("Your archive is ready.")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("Your archive is ready, with some events withheld.")).toBeInTheDocument());
     expect(screen.getByText(/1 page read, 1 event and 1 media reference collected from Divine/)).toBeInTheDocument();
+    expect(screen.getByText(/1 event in this archive is banned on Divine/)).toBeInTheDocument();
+    expect(screen.getByText(/Divine withheld 1 event under its content rules/)).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Move your media" })).toBeInTheDocument();
     expect(String(fetcher.mock.calls[1][0])).toContain("/export/snapshot?enforcement_id=");
   });

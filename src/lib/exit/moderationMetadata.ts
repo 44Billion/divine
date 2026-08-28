@@ -7,6 +7,15 @@ export interface ModerationAnnotation {
   status: AnnotationStatus;
 }
 
+export interface ExportModeration {
+  annotations: ModerationAnnotation[];
+  annotationsStatus: "complete" | "incomplete" | "unsupported";
+  invalidAnnotationCount: number;
+  orphanAnnotationCount: number;
+  conflictingAnnotationCount: number;
+  withheld: WithheldResult;
+}
+
 export type AnnotationMetadata =
   | { kind: "unsupported" }
   | {
