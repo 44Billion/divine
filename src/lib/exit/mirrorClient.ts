@@ -7,8 +7,10 @@ import { createBlossomUploadAuthHeader } from "@/lib/blossomAuth";
 
 import type { MediaReference } from "./archive";
 import { DestinationError } from "./destination";
+import { fetchAndHashBlob, type HashedBlob } from "./mediaBlob";
+import { groupMediaReferences } from "./mediaReferences";
 
-export type MirrorVerification = "descriptor-verified" | "already-present" | "unverified" | "hash-mismatch" | "failed" | "skipped";
+export type MirrorVerification = "descriptor-verified" | "upload-verified" | "already-present" | "unverified" | "hash-mismatch" | "failed" | "skipped";
 
 export interface MirrorResult {
   references: MediaReference[];
@@ -52,14 +54,9 @@ interface MirrorOptions {
   onProgress?(progress: MirrorProgress): void;
 }
 
-function groupReferences(references: MediaReference[]): MediaReference[][] {
-  const grouped = new Map<string, MediaReference[]>();
-  for (const reference of references) {
-    const key = reference.sha256 ? `hash:${reference.sha256}` : `url:${reference.url}`;
-    grouped.set(key, [...(grouped.get(key) ?? []), reference]);
-  }
-  return [...grouped.values()];
-}
+const MAX_HASHLESS_IMAGE_BYTES = 5 * 1024 * 1024;
+const PROFILE_IMAGE_TAGS = new Set(["picture", "banner"]);
+const UPLOADABLE_IMAGE_TYPES = new Set(["image/gif", "image/jpeg", "image/png", "image/webp"]);
 
 function isHlsManifest(url: string): boolean {
   try {
@@ -156,6 +153,28 @@ async function requestMirror(
         signal: options.signal,
         headers: { Authorization: authorization, "Content-Type": "application/json" },
         body: JSON.stringify({ url: references[0].url }),
+      });
+      if (response.status !== 429 || attempt >= (options.maxRateLimitRetries ?? 2)) return response;
+      await wait(retryDelay(response), options.signal);
+    } catch (error) {
+      if (options.signal?.aborted) throw new DOMException("Mirror cancelled", "AbortError");
+      if (!(error instanceof TypeError)) throw error;
+      return new DestinationError("unreachable", `Your browser couldn't reach ${options.destination}. The server may be down, or it may not accept requests from other websites.`);
+    }
+  }
+}
+
+async function requestUpload(blob: HashedBlob, options: MirrorOptions): Promise<Response | DestinationError> {
+  const fetcher = options.fetcher ?? fetch;
+  const wait = options.wait ?? defaultWait;
+  for (let attempt = 0; ; attempt += 1) {
+    const authorization = await createBlossomUploadAuthHeader(options.signer, blob.computedSha256);
+    try {
+      const response = await fetcher(`${options.destination}/upload`, {
+        method: "PUT",
+        signal: options.signal,
+        headers: { Authorization: authorization, "Content-Type": blob.contentType! },
+        body: blob.bytes,
       });
       if (response.status !== 429 || attempt >= (options.maxRateLimitRetries ?? 2)) return response;
       await wait(retryDelay(response), options.signal);
@@ -297,31 +316,119 @@ async function mirrorOne(
   return { result: await verifyReadback(references, descriptor, options), destinationError: null };
 }
 
+function skippedResult(references: MediaReference[], reason: string): MirrorResult {
+  return {
+    references,
+    source_url: references[0].url,
+    destination_url: null,
+    expected_sha256: references[0].sha256,
+    destination_sha256: null,
+    byte_size: null,
+    verification: "skipped",
+    reason,
+  };
+}
+
+async function verifyUploadedReadback(
+  references: MediaReference[],
+  descriptor: BlobDescriptor,
+  options: MirrorOptions,
+): Promise<MirrorResult> {
+  try {
+    const response = await (options.fetcher ?? fetch)(descriptor.url, {
+      method: "HEAD",
+      signal: options.signal,
+      redirect: "follow",
+    });
+    const size = response.headers.get("content-length");
+    if (response.ok && size !== null && Number(size) === descriptor.size) {
+      return { references, source_url: references[0].url, destination_url: descriptor.url, expected_sha256: null,
+        destination_sha256: descriptor.sha256, byte_size: descriptor.size, verification: "upload-verified" };
+    }
+  } catch {
+    if (options.signal?.aborted) throw new DOMException("Mirror cancelled", "AbortError");
+  }
+  return { references, source_url: references[0].url, destination_url: descriptor.url, expected_sha256: null,
+    destination_sha256: descriptor.sha256, byte_size: descriptor.size, verification: "unverified",
+    reason: "The destination accepted the upload, but browser readback could not be confirmed." };
+}
+
+async function uploadHashlessImage(
+  references: MediaReference[],
+  options: MirrorOptions,
+): Promise<{ result: MirrorResult; destinationError: DestinationError | null; copyAttempted: boolean }> {
+  let blob: HashedBlob;
+  try {
+    blob = await fetchAndHashBlob({
+      url: references[0].url,
+      signer: options.signer,
+      signal: options.signal,
+      fetcher: options.fetcher,
+      maxBytes: MAX_HASHLESS_IMAGE_BYTES,
+    });
+  } catch (error) {
+    if (options.signal?.aborted) throw new DOMException("Mirror cancelled", "AbortError");
+    const reason = error instanceof Error ? error.message : "download failed";
+    if (reason.includes("larger than")) {
+      return { result: skippedResult(references, "The hashless image is larger than 5 MB, so it was not uploaded."), destinationError: null, copyAttempted: false };
+    }
+    return { result: failedResult(references, "failed", `The source image could not be read: ${reason}`), destinationError: null, copyAttempted: false };
+  }
+  if (!blob.contentType || !UPLOADABLE_IMAGE_TYPES.has(blob.contentType)) {
+    return { result: skippedResult(references, "The hashless source is not a supported image, so it was not uploaded."), destinationError: null, copyAttempted: false };
+  }
+
+  const response = await requestUpload(blob, options);
+  if (response instanceof DestinationError) {
+    return { result: failedResult(references, "failed", response.message), destinationError: response, copyAttempted: true };
+  }
+  if (response.status === 404 || response.status === 405 || response.status === 501) {
+    return { result: skippedResult(references, `${options.destination} does not support browser uploads.`), destinationError: null, copyAttempted: false };
+  }
+  const destinationError = response.status === 429
+    ? new DestinationError("rate-limited", `${options.destination} is rate limiting media copies. Try again later.`, 429)
+    : destinationFailure(response.status, options.destination);
+  if (destinationError) {
+    return { result: failedResult(references, "failed", destinationError.message), destinationError, copyAttempted: true };
+  }
+  if (!response.ok) {
+    return { result: failedResult(references, "failed", `The destination refused this upload (HTTP ${response.status}).${serverReason(response)}`), destinationError: null, copyAttempted: true };
+  }
+  const descriptor = await readDescriptor(response);
+  if (!descriptor) return { result: failedResult(references, "failed", "The destination returned an invalid blob descriptor."), destinationError: null, copyAttempted: true };
+  if (descriptor.sha256 !== blob.computedSha256 || descriptor.size !== blob.bytes.length) {
+    return { result: failedResult(references, "hash-mismatch", "The destination reported different uploaded bytes.", descriptor), destinationError: null, copyAttempted: true };
+  }
+  return { result: await verifyUploadedReadback(references, descriptor, options), destinationError: null, copyAttempted: true };
+}
+
 export async function mirrorArchiveMedia(options: MirrorOptions): Promise<MirrorResult[]> {
-  const groups = groupReferences(options.references);
+  const groups = groupMediaReferences(options.references);
   const results: MirrorResult[] = [];
-  let copyAttempts = 0;
+  let mirrorAttempts = 0;
+  let uploadAttempts = 0;
   for (const references of groups) {
     if (options.signal?.aborted) throw new DOMException("Mirror cancelled", "AbortError");
     const reference = references[0];
     let result: MirrorResult;
     if (isHlsManifest(reference.url)) {
-      result = {
-        references, source_url: reference.url, destination_url: null, expected_sha256: reference.sha256,
-        destination_sha256: null, byte_size: null, verification: "skipped",
-        reason: "Streaming manifests are generated derivatives and were not copied.",
-      };
+      result = skippedResult(references, "Streaming manifests are generated derivatives and were not copied.");
     } else if (!reference.sha256) {
-      result = {
-        references, source_url: reference.url, destination_url: null, expected_sha256: null,
-        destination_sha256: null, byte_size: null, verification: "skipped",
-        reason: "The source did not advertise a SHA-256 hash, so a secure copy could not be authorized.",
-      };
+      if (references.some(({ tag }) => PROFILE_IMAGE_TAGS.has(tag))) {
+        const outcome = await uploadHashlessImage(references, options);
+        if (outcome.copyAttempted) {
+          if (uploadAttempts === 0 && outcome.destinationError) throw outcome.destinationError;
+          uploadAttempts += 1;
+        }
+        result = outcome.result;
+      } else {
+        result = skippedResult(references, "The source did not advertise a SHA-256 hash, so a secure copy could not be authorized.");
+      }
     } else {
       const outcome = await mirrorOne(references, reference.sha256, options);
       if (outcome.result.verification !== "already-present") {
-        if (copyAttempts === 0 && outcome.destinationError) throw outcome.destinationError;
-        copyAttempts += 1;
+        if (mirrorAttempts === 0 && outcome.destinationError) throw outcome.destinationError;
+        mirrorAttempts += 1;
       }
       result = outcome.result;
     }
@@ -333,7 +440,7 @@ export async function mirrorArchiveMedia(options: MirrorOptions): Promise<Mirror
 
 export function summarizeMirrorResults(results: MirrorResult[]): MirrorSummary {
   return {
-    mirrored: results.filter((result) => result.verification === "descriptor-verified").length,
+    mirrored: results.filter((result) => result.verification === "descriptor-verified" || result.verification === "upload-verified").length,
     alreadyPresent: results.filter((result) => result.verification === "already-present").length,
     failed: results.filter((result) => result.verification === "failed" || result.verification === "hash-mismatch").length,
     skipped: results.filter((result) => result.verification === "skipped").length,

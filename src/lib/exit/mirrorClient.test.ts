@@ -17,6 +17,10 @@ function reference(url: string, sha256: string | null = hash): MediaReference {
   return { event_id: "f".repeat(64), tag: "url", url, sha256 };
 }
 
+function profileReference(url: string): MediaReference {
+  return { ...reference(url, null), tag: "picture" };
+}
+
 function descriptor(sha256 = hash, size = 5) {
   return { url: `https://blossom.example/${sha256}`, sha256, size, type: "video/mp4" };
 }
@@ -126,17 +130,142 @@ describe("mirrorArchiveMedia", () => {
     expect(onProgress.mock.calls.map(([progress]) => progress.completed)).toEqual([1, 2]);
   });
 
-  it("skips a source without an advertised hash before signing or requesting it", async () => {
-    const fetcher = vi.fn<typeof fetch>();
+  it("uploads a hashless image with its computed hash", async () => {
+    const imageHash = "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824";
+    const fetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response("hello", { headers: { "content-type": "image/jpeg" } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(descriptor(imageHash)), { status: 200 }))
+      .mockResolvedValueOnce(blobHead(5, "image/jpeg"));
     const results = await mirrorArchiveMedia({
-      destination: "https://blossom.example", references: [reference("https://source.example/no-hash", null)], signer, fetcher,
+      destination: "https://blossom.example", references: [profileReference("https://source.example/avatar.jpg")], signer, fetcher,
+    });
+    expect(results[0]).toMatchObject({
+      verification: "upload-verified",
+      expected_sha256: null,
+      destination_sha256: imageHash,
+      destination_url: `https://blossom.example/${imageHash}`,
+    });
+    expect(fetcher.mock.calls[1][0]).toBe("https://blossom.example/upload");
+    expect(fetcher.mock.calls[1][1]).toMatchObject({ method: "PUT", body: expect.any(Uint8Array) });
+    expect(fetcher.mock.calls[2][1]).toMatchObject({ method: "HEAD", redirect: "follow" });
+    expect(decodeAuthorization(new Headers(fetcher.mock.calls[1][1]?.headers).get("Authorization") ?? "").tags)
+      .toContainEqual(["x", imageHash]);
+  });
+
+  it("does not rewrite to an uploaded descriptor URL that fails readback", async () => {
+    const imageHash = "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824";
+    const fetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response("hello", { headers: { "content-type": "image/jpeg" } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(descriptor(imageHash)), { status: 200 }))
+      .mockResolvedValueOnce(new Response(null, { status: 404 }));
+
+    const [result] = await mirrorArchiveMedia({
+      destination: "https://blossom.example", references: [profileReference("https://source.example/avatar.jpg")], signer, fetcher,
+    });
+
+    expect(result).toMatchObject({ verification: "unverified", destination_sha256: imageHash });
+  });
+
+  it("fails fast when the first hashless upload needs destination access", async () => {
+    const fetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response("hello", { headers: { "content-type": "image/jpeg" } }))
+      .mockResolvedValueOnce(new Response(null, { status: 401 }));
+
+    await expect(mirrorArchiveMedia({
+      destination: "https://blossom.example", references: [profileReference("https://source.example/avatar.jpg")], signer, fetcher,
+    })).rejects.toMatchObject({ code: "auth-required" });
+  });
+
+  it("skips a hashless image when the destination has no upload support", async () => {
+    const fetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response("hello", { headers: { "content-type": "image/jpeg" } }))
+      .mockResolvedValueOnce(new Response(null, { status: 404 }));
+
+    const results = await mirrorArchiveMedia({
+      destination: "https://blossom.example", references: [profileReference("https://source.example/avatar.jpg")], signer, fetcher,
     });
     expect(results[0]).toMatchObject({
       verification: "skipped",
-      destination_sha256: null,
+      reason: expect.stringContaining("does not support browser uploads"),
+    });
+  });
+
+  it("keeps the canary for a mirror after skipping unsupported browser uploads", async () => {
+    const fetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response("hello", { headers: { "content-type": "image/jpeg" } }))
+      .mockResolvedValueOnce(new Response(null, { status: 404 }))
+      .mockResolvedValueOnce(new Response(null, { status: 401 }))
+      .mockResolvedValueOnce(new Response(null, { status: 404 }));
+
+    await expect(mirrorArchiveMedia({
+      destination: "https://blossom.example",
+      references: [profileReference("https://source.example/avatar.jpg"), reference("https://source.example/video.mp4")],
+      signer,
+      fetcher,
+    })).rejects.toMatchObject({ code: "auth-required" });
+  });
+
+  it("keeps the mirror canary after a successful browser upload", async () => {
+    const imageHash = "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824";
+    const fetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response("hello", { headers: { "content-type": "image/jpeg" } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(descriptor(imageHash)), { status: 200 }))
+      .mockResolvedValueOnce(blobHead(5, "image/jpeg"))
+      .mockResolvedValueOnce(new Response(null, { status: 404 }))
+      .mockResolvedValueOnce(new Response(null, { status: 404 }));
+
+    await expect(mirrorArchiveMedia({
+      destination: "https://blossom.example",
+      references: [profileReference("https://source.example/avatar.jpg"), reference("https://source.example/video.mp4")],
+      signer,
+      fetcher,
+    })).rejects.toMatchObject({ code: "no-mirror-support" });
+  });
+
+  it("does not certify a hashless upload whose descriptor reports another hash", async () => {
+    const fetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response("hello", { headers: { "content-type": "image/jpeg" } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(descriptor(otherHash)), { status: 200 }));
+    const results = await mirrorArchiveMedia({
+      destination: "https://blossom.example", references: [profileReference("https://source.example/avatar.jpg")], signer, fetcher,
+    });
+    expect(results[0]).toMatchObject({ verification: "hash-mismatch", destination_sha256: otherHash });
+  });
+
+  it("skips hashless non-images and oversized images without uploading them", async () => {
+    const nonImageFetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response("hello", { headers: { "content-type": "video/mp4" } }));
+    const [nonImage] = await mirrorArchiveMedia({
+      destination: "https://blossom.example", references: [profileReference("https://source.example/video")], signer,
+      fetcher: nonImageFetcher,
+    });
+    expect(nonImage).toMatchObject({ verification: "skipped", reason: expect.stringContaining("not a supported image") });
+    expect(nonImageFetcher).toHaveBeenCalledOnce();
+
+    const oversizedFetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response("hello", {
+        headers: { "content-type": "image/jpeg", "content-length": String(5 * 1024 * 1024 + 1) },
+      }));
+    const [oversized] = await mirrorArchiveMedia({
+      destination: "https://blossom.example", references: [profileReference("https://source.example/avatar.jpg")], signer,
+      fetcher: oversizedFetcher,
+    });
+    expect(oversized).toMatchObject({ verification: "skipped", reason: expect.stringContaining("larger than") });
+    expect(oversizedFetcher).toHaveBeenCalledOnce();
+  });
+
+  it("leaves hashless non-profile images untouched", async () => {
+    const fetcher = vi.fn<typeof fetch>();
+    const thumbnail = { ...reference("https://source.example/thumbnail.jpg", null), tag: "thumbnail" };
+
+    const [result] = await mirrorArchiveMedia({
+      destination: "https://blossom.example", references: [thumbnail], signer, fetcher,
+    });
+
+    expect(result).toMatchObject({
+      verification: "skipped",
       reason: expect.stringContaining("did not advertise a SHA-256 hash"),
     });
-    expect(signer.signEvent).not.toHaveBeenCalled();
     expect(fetcher).not.toHaveBeenCalled();
   });
 
@@ -377,7 +506,8 @@ describe("mirrorArchiveMedia", () => {
       { references: [], source_url: "one", destination_url: "one", expected_sha256: hash, destination_sha256: hash, byte_size: null, verification: "already-present" },
       { references: [], source_url: "two", destination_url: "two", expected_sha256: hash, destination_sha256: hash, byte_size: 5, verification: "descriptor-verified" },
       { references: [], source_url: "three", destination_url: null, expected_sha256: hash, destination_sha256: null, byte_size: null, verification: "failed" },
-    ])).toEqual({ mirrored: 1, alreadyPresent: 1, failed: 1, skipped: 0, unverified: 0 });
+      { references: [], source_url: "four", destination_url: "four", expected_sha256: null, destination_sha256: hash, byte_size: 5, verification: "upload-verified" },
+    ])).toEqual({ mirrored: 2, alreadyPresent: 1, failed: 1, skipped: 0, unverified: 0 });
   });
 
   it("throws a typed destination error after exhausted canary rate limits", async () => {
