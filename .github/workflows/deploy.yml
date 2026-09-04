@@ -86,11 +86,43 @@ jobs:
           cache: 'npm'
           cache-dependency-path: package-lock.json
 
-      - name: Install Fastly CLI
-        run: npm install -g @fastly/cli
-
+      # Installs the compute-js workspace deps, including @fastly/cli, pinned
+      # via package-lock. The Fastly steps below invoke it as
+      # `npx --no-install fastly` from working-directory: compute-js — not a
+      # global `npm install -g @fastly/cli` — so the deploy uses the
+      # lockfile-pinned version (reproducible, visible to dependency tooling,
+      # and the same CLI local dev uses). The steps MUST run from compute-js;
+      # from the repo root, npx would resolve a different @fastly/cli that
+      # compute-js-static-publish pulls in. Bump the pin deliberately in
+      # compute-js/package.json.
       - name: Install Fastly compute dependencies
         run: npm ci
+
+      # Assert which Fastly CLI npx actually resolves: its major must match the
+      # @fastly/cli pin in compute-js/package.json. This deliberately checks the
+      # resolved version rather than a node_modules path, because where npm
+      # places that binary is an accident of lockfile history, not a stable
+      # fact. compute-js pins ^16 while @fastly/compute-js-static-publish pins
+      # ^15; in this lock the 16.0.0 copy happens to sit under compute-js/ with
+      # 15.4.0 at the root, but resolving those same ranges in a clean tree
+      # hoists 16.0.0 to the root instead, and any lockfile regeneration can
+      # flip the layout and delete compute-js/node_modules/ outright. A path
+      # guard hard-fails on that flip even though npx still resolves the right
+      # CLI. This check passes on every layout and still fails on a wrong
+      # resolution (e.g. a root ^15 binary), on the major mismatch.
+      - name: Show pinned Fastly CLI version
+        working-directory: compute-js
+        run: |
+          set -euo pipefail
+          want="$(node -p "require('./package.json').devDependencies['@fastly/cli'].match(/\\d+/)[0]")"
+          version_output="$(npx --no-install fastly version)"
+          line="${version_output%%$'\n'*}"
+          got="$(printf '%s' "$line" | sed -n 's/.*v\([0-9][0-9]*\)\..*/\1/p')"
+          echo "$line (compute-js pins ^${want}.x)"
+          [ "$want" = "$got" ] || {
+            echo "::error::Fastly CLI major '${got:-unparseable}' resolved, but compute-js pins ^${want}.x; deploys would run the wrong binary."
+            exit 1
+          }
 
       - name: Deploy to Fastly Compute (edge worker)
         working-directory: compute-js
@@ -99,7 +131,7 @@ jobs:
         run: |
           set -euo pipefail
           for attempt in $(seq 1 5); do
-            if fastly compute publish --non-interactive --token="$FASTLY_API_TOKEN"; then
+            if npx --no-install fastly compute publish --non-interactive --token="$FASTLY_API_TOKEN"; then
               exit 0
             fi
 
@@ -125,7 +157,7 @@ jobs:
           # partial publish can't go green. We match the stable ASCII "Failed:"
           # rather than the emoji so a locale/encoding change can't silently
           # disable this guard. See #426.
-          npx @fastly/compute-js-static-publish publish-content 2>&1 | tee /tmp/publish-content.log
+          npx --no-install @fastly/compute-js-static-publish publish-content 2>&1 | tee /tmp/publish-content.log
           if grep -qF 'Failed:' /tmp/publish-content.log; then
             echo "::error::publish-content dropped one or more uploads (see 'Failed:' above)."
             exit 1
@@ -142,7 +174,7 @@ jobs:
             echo "Failed to read service_id from compute-js/fastly.toml" >&2
             exit 1
           }
-          fastly purge --all --service-id "$service_id" --token="$FASTLY_API_TOKEN"
+          npx --no-install fastly purge --all --service-id "$service_id" --token="$FASTLY_API_TOKEN"
 
       - name: Verify live .well-known endpoints
         run: |
