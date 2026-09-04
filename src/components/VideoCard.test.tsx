@@ -219,7 +219,11 @@ vi.mock('@/hooks/useDeleteVideo', () => ({
     mutate: playbackMocks.deleteVideo,
     isPending: false,
   }),
-  useCanDeleteVideo: () => false,
+}));
+
+vi.mock('@/hooks/useIsOwnVideo', () => ({
+  useIsOwnVideo: (video?: ParsedVideoData) =>
+    authMocks.useCurrentUser()?.user?.pubkey === video?.pubkey,
 }));
 
 vi.mock('@/hooks/usePinnedVideos', () => ({
@@ -670,5 +674,25 @@ describe('VideoCard', () => {
 
     expect(screen.getByTestId(`video-player-${video.id}`)).toBeInTheDocument();
     expect(screen.queryByText('Failed to load video')).not.toBeInTheDocument();
+  });
+
+  describe('self-moderation affordances', () => {
+    it('hides report and mute actions on the viewer\'s own video', () => {
+      authMocks.useCurrentUser.mockReturnValue({ user: { pubkey: 'f'.repeat(64) } });
+      render(<VideoCard video={baseVideo} />);
+
+      expect(screen.queryByText('Report video')).not.toBeInTheDocument();
+      expect(screen.queryByText('Report user')).not.toBeInTheDocument();
+      expect(screen.queryByText(/^Mute /)).not.toBeInTheDocument();
+    });
+
+    it('shows report and mute actions on another user\'s video', () => {
+      authMocks.useCurrentUser.mockReturnValue({ user: { pubkey: 'a'.repeat(64) } });
+      render(<VideoCard video={baseVideo} />);
+
+      expect(screen.getByText('Report video')).toBeInTheDocument();
+      expect(screen.getByText('Report user')).toBeInTheDocument();
+      expect(screen.getByText(/^Mute /)).toBeInTheDocument();
+    });
   });
 });

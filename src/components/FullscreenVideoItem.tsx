@@ -20,7 +20,8 @@ import { useVideoPlayback } from '@/hooks/useVideoPlayback';
 import { useVideoReactions } from '@/hooks/useVideoReactions';
 import { useVideosInLists } from '@/hooks/useVideoLists';
 import { useMuteItem } from '@/hooks/useModeration';
-import { useDeleteVideo, useCanDeleteVideo } from '@/hooks/useDeleteVideo';
+import { useDeleteVideo } from '@/hooks/useDeleteVideo';
+import { useIsOwnVideo } from '@/hooks/useIsOwnVideo';
 import { useToast } from '@/hooks/useToast';
 import { enhanceAuthorData } from '@/lib/generateProfile';
 import { genUserName } from '@/lib/genUserName';
@@ -116,7 +117,7 @@ export function FullscreenVideoItem({
   const { toast } = useToast();
   const muteUser = useMuteItem();
   const { mutate: deleteVideo, isPending: isDeleting } = useDeleteVideo();
-  const canDelete = useCanDeleteVideo(video);
+  const isOwnVideo = useIsOwnVideo(video);
   const { data: reactions } = useVideoReactions(video.id, video.pubkey, video.vineId);
   const { data: lists } = useVideosInLists(video.vineId ?? undefined, video.id);
   const playbackCountLabel = video.isVineMigrated
@@ -509,7 +510,7 @@ export function FullscreenVideoItem({
                   </button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="bg-black/90 border-white/20 text-white">
-                  {canDelete && (
+                  {isOwnVideo && (
                     <>
                       <DropdownMenuItem
                         onClick={() => setShowDeleteDialog(true)}
@@ -521,29 +522,33 @@ export function FullscreenVideoItem({
                       <DropdownMenuSeparator className="bg-white/20" />
                     </>
                   )}
-                  <DropdownMenuItem
-                    onClick={() => setShowReportDialog(true)}
-                    className="focus:bg-white/10"
-                  >
-                    <Flag className="h-4 w-4 mr-2" />
-                    {t('fullscreenVideoItem.reportVideo')}
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onClick={() => setShowReportUserDialog(true)}
-                    className="focus:bg-white/10"
-                  >
-                    <Flag className="h-4 w-4 mr-2" />
-                    {t('fullscreenVideoItem.reportUser')}
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator className="bg-white/20" />
-                  <DropdownMenuItem
-                    onClick={handleMuteUser}
-                    className="text-red-400 focus:text-red-400 focus:bg-red-500/20"
-                  >
-                    <UserX className="h-4 w-4 mr-2" />
-                    {t('fullscreenVideoItem.muteUser', { name: displayName })}
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator className="bg-white/20" />
+                  {!isOwnVideo && (
+                    <>
+                      <DropdownMenuItem
+                        onClick={() => setShowReportDialog(true)}
+                        className="focus:bg-white/10"
+                      >
+                        <Flag className="h-4 w-4 mr-2" />
+                        {t('fullscreenVideoItem.reportVideo')}
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={() => setShowReportUserDialog(true)}
+                        className="focus:bg-white/10"
+                      >
+                        <Flag className="h-4 w-4 mr-2" />
+                        {t('fullscreenVideoItem.reportUser')}
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator className="bg-white/20" />
+                      <DropdownMenuItem
+                        onClick={handleMuteUser}
+                        className="text-red-400 focus:text-red-400 focus:bg-red-500/20"
+                      >
+                        <UserX className="h-4 w-4 mr-2" />
+                        {t('fullscreenVideoItem.muteUser', { name: displayName })}
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator className="bg-white/20" />
+                    </>
+                  )}
                   <DropdownMenuItem
                     onClick={() => setShowViewSourceDialog(true)}
                     className="focus:bg-white/10"

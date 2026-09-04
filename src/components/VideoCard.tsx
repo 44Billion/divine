@@ -23,7 +23,8 @@ import { VideoVerificationBadgeRow } from '@/components/VideoVerificationBadgeRo
 import { useAuthor } from '@/hooks/useAuthor';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import { useMuteItem } from '@/hooks/useModeration';
-import { useDeleteVideo, useCanDeleteVideo } from '@/hooks/useDeleteVideo';
+import { useDeleteVideo } from '@/hooks/useDeleteVideo';
+import { useIsOwnVideo } from '@/hooks/useIsOwnVideo';
 import { useIsVideoPinned, usePinVideo, useUnpinVideo } from '@/hooks/usePinnedVideos';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useAdultVerification } from '@/hooks/useAdultVerification';
@@ -259,7 +260,7 @@ export function VideoCard({
   const showSubtitles = subtitlesVisible && hasSubtitles;
 
   const { mutate: deleteVideo, isPending: isDeleting } = useDeleteVideo();
-  const canDelete = useCanDeleteVideo(video);
+  const isOwnVideo = useIsOwnVideo(video);
   const { user: currentUser } = useCurrentUser();
   const coordinate = video.vineId ? `${SHORT_VIDEO_KIND}:${video.pubkey}:${video.vineId}` : undefined;
   const isPinned = useIsVideoPinned(coordinate);
@@ -1017,7 +1018,7 @@ export function VideoCard({
                   <DropdownMenuSeparator />
                 </>
               )}
-              {canDelete && (
+              {isOwnVideo && (
                 <>
                   <DropdownMenuItem
                     onClick={() => setShowDeleteDialog(true)}
@@ -1029,20 +1030,24 @@ export function VideoCard({
                   <DropdownMenuSeparator />
                 </>
               )}
-              <DropdownMenuItem onClick={() => setShowReportDialog(true)}>
-                <Flag className="h-4 w-4 mr-2" />
-                {t('videoCard.menu.reportVideo')}
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setShowReportUserDialog(true)}>
-                <Flag className="h-4 w-4 mr-2" />
-                {t('videoCard.menu.reportUser')}
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={handleMuteUser} className="text-destructive focus:text-destructive">
-                <UserX className="h-4 w-4 mr-2" />
-                {t('videoCard.menu.muteUser', { name: displayName })}
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
+              {!isOwnVideo && (
+                <>
+                  <DropdownMenuItem onClick={() => setShowReportDialog(true)}>
+                    <Flag className="h-4 w-4 mr-2" />
+                    {t('videoCard.menu.reportVideo')}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setShowReportUserDialog(true)}>
+                    <Flag className="h-4 w-4 mr-2" />
+                    {t('videoCard.menu.reportUser')}
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={handleMuteUser} className="text-destructive focus:text-destructive">
+                    <UserX className="h-4 w-4 mr-2" />
+                    {t('videoCard.menu.muteUser', { name: displayName })}
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                </>
+              )}
               <DropdownMenuItem onClick={() => setShowViewSourceDialog(true)}>
                 <Code className="h-4 w-4 mr-2" />
                 {t('videoCard.menu.viewSource')}

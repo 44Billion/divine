@@ -1,4 +1,4 @@
-import { fireEvent, render } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { forwardRef, type HTMLAttributes, type ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ParsedVideoData } from '@/types/video';
@@ -8,6 +8,14 @@ const playbackMocks = vi.hoisted(() => ({
   setActiveVideo: vi.fn(),
   setUserPaused: vi.fn(),
   setGlobalMuted: vi.fn(),
+}));
+
+const authMocks = vi.hoisted(() => ({
+  useCurrentUser: vi.fn(() => ({ user: null as { pubkey: string } | null })),
+}));
+
+vi.mock('@/hooks/useCurrentUser', () => ({
+  useCurrentUser: () => authMocks.useCurrentUser(),
 }));
 
 vi.mock('react-i18next', () => ({
@@ -34,7 +42,10 @@ vi.mock('@/hooks/useVideoLists', () => ({ useVideosInLists: () => ({ data: undef
 vi.mock('@/hooks/useModeration', () => ({ useMuteItem: () => ({ mutateAsync: vi.fn() }) }));
 vi.mock('@/hooks/useDeleteVideo', () => ({
   useDeleteVideo: () => ({ mutate: vi.fn(), isPending: false }),
-  useCanDeleteVideo: () => false,
+}));
+vi.mock('@/hooks/useIsOwnVideo', () => ({
+  useIsOwnVideo: (video?: ParsedVideoData) =>
+    authMocks.useCurrentUser().user?.pubkey === video?.pubkey,
 }));
 vi.mock('@/hooks/useToast', () => ({ useToast: () => ({ toast: vi.fn() }) }));
 vi.mock('@/hooks/useBadges', () => ({ useBadges: () => ({ data: undefined }) }));
@@ -130,6 +141,30 @@ function renderItem(prefix?: ReactNode) {
 function setPaused(el: HTMLMediaElement, paused: boolean) {
   Object.defineProperty(el, 'paused', { value: paused, configurable: true });
 }
+
+beforeEach(() => {
+  authMocks.useCurrentUser.mockReturnValue({ user: null });
+});
+
+describe('FullscreenVideoItem self-moderation affordances', () => {
+  it('hides report and mute actions on the viewer\'s own video', () => {
+    authMocks.useCurrentUser.mockReturnValue({ user: { pubkey: 'f'.repeat(64) } });
+    renderItem();
+
+    expect(screen.queryByText('fullscreenVideoItem.reportVideo')).not.toBeInTheDocument();
+    expect(screen.queryByText('fullscreenVideoItem.reportUser')).not.toBeInTheDocument();
+    expect(screen.queryByText('fullscreenVideoItem.muteUser')).not.toBeInTheDocument();
+  });
+
+  it('shows report and mute actions on another user\'s video', () => {
+    authMocks.useCurrentUser.mockReturnValue({ user: { pubkey: 'a'.repeat(64) } });
+    renderItem();
+
+    expect(screen.getByText('fullscreenVideoItem.reportVideo')).toBeInTheDocument();
+    expect(screen.getByText('fullscreenVideoItem.reportUser')).toBeInTheDocument();
+    expect(screen.getByText('fullscreenVideoItem.muteUser')).toBeInTheDocument();
+  });
+});
 
 describe('FullscreenVideoItem tap-to-pause', () => {
   beforeEach(() => {
