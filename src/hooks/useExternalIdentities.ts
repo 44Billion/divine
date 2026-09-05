@@ -7,6 +7,7 @@ import type { NostrEvent } from '@nostrify/nostrify';
 import { nip19 } from 'nostr-tools';
 import { getCachedVerification, setCachedVerification } from '@/lib/verificationCache';
 import { API_CONFIG, getFeatureFlag } from '@/config/api';
+import { discordProofFromInput } from '@/lib/discordProof';
 
 export interface ExternalIdentity {
   platform: string;
@@ -116,7 +117,7 @@ const PLATFORM_CONFIG: Record<string, PlatformConfig> = {
   discord: {
     label: 'Discord',
     profileUrl: (id) => `https://discord.com/users/${id}`,
-    proofUrl: (_id, proof) => `https://discord.gg/${proof}`,
+    proofUrl: (_id, proof) => proof,
     verificationText: (npub) => [
       `Verifying that I control the following Nostr public key: "${npub}"`,
     ],
@@ -239,7 +240,10 @@ function cleanProofId(platform: string, proof: string): string {
       case 'mastodon': return parts.pop() || proof;
       case 'bluesky': return parts.pop() || proof;
       case 'telegram': return parts.slice(-2).join('/') || proof;
-      case 'discord': return parts.pop() || proof;
+      // The verifier parses the message URL itself, and a message id is
+      // meaningless without its channel. Reducing it to a bare id made the
+      // service fall back to its own configured channel and 404 everywhere else.
+      case 'discord': return discordProofFromInput(proof).proof;
       case 'youtube': {
         if (url.hostname.includes('youtu.be')) return parts[0] || proof;
         if (parts[0] === 'watch') return url.searchParams.get('v') || proof;
@@ -283,13 +287,24 @@ export async function verifyIdentityClaim(
   }
 
   // Check localStorage cache first (skip 'manual' so verifyer service gets a chance)
-  const cached = getCachedVerification(cleanedIdentity.platform, cleanedIdentity.identity, cleanedIdentity.proof);
+  const cached = getCachedVerification(
+    cleanedIdentity.platform,
+    cleanedIdentity.identity,
+    cleanedIdentity.proof,
+    pubkey,
+  );
   if (cached && cached.error !== 'manual') return cached;
 
   // Try verification service if available
   const serviceResult = await verifyViaService(cleanedIdentity, pubkey);
   if (serviceResult) {
-    setCachedVerification(cleanedIdentity.platform, cleanedIdentity.identity, cleanedIdentity.proof, serviceResult);
+    setCachedVerification(
+      cleanedIdentity.platform,
+      cleanedIdentity.identity,
+      cleanedIdentity.proof,
+      pubkey,
+      serviceResult,
+    );
     return serviceResult;
   }
 
@@ -312,7 +327,13 @@ export async function verifyIdentityClaim(
 
     if (!response.ok) {
       const result = { verified: false, error: `HTTP ${response.status}` };
-      setCachedVerification(cleanedIdentity.platform, cleanedIdentity.identity, cleanedIdentity.proof, result);
+      setCachedVerification(
+        cleanedIdentity.platform,
+        cleanedIdentity.identity,
+        cleanedIdentity.proof,
+        pubkey,
+        result,
+      );
       return result;
     }
 
@@ -321,7 +342,13 @@ export async function verifyIdentityClaim(
 
     const found = expectedTexts.some((expected) => text.includes(expected));
     const result = { verified: found, error: found ? undefined : 'npub not found in proof' };
-    setCachedVerification(cleanedIdentity.platform, cleanedIdentity.identity, cleanedIdentity.proof, result);
+    setCachedVerification(
+      cleanedIdentity.platform,
+      cleanedIdentity.identity,
+      cleanedIdentity.proof,
+      pubkey,
+      result,
+    );
     return result;
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Fetch failed';
