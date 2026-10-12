@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  parseFeaturedTabEmoji,
   parseFeaturedTabPillLabel,
   parseFeaturedTabSlug,
   parseFeaturedTabSponsorName,
@@ -53,6 +54,83 @@ describe('featured tab transforms', () => {
     expect(parseFeaturedTabPillLabel('Ska\u200bte')).toBe('Skate');
     expect(parseFeaturedTabSponsorName('Acme\u200b Bikes')).toBe('Acme Bikes');
     expect(parseFeaturedTabSponsorName('\u200b\u202e')).toBeNull();
+  });
+
+  describe('parseFeaturedTabEmoji', () => {
+    it.each([
+      ['sparkles', '\u2728'],
+      ['party popper', '\u{1F389}'],
+      ['star without a presentation selector', '\u2B50'],
+      ['heart with VS16', '\u2764\uFE0F'],
+      ['thumbs up with a skin tone', '\u{1F44D}\u{1F3FD}'],
+      ['ZWJ sequence', '\u{1F469}\u200D\u{1F4BB}'],
+      ['rainbow flag', '\u{1F3F3}\uFE0F\u200D\u{1F308}'],
+      ['regional indicator flag', '\u{1F1FA}\u{1F1F8}'],
+      ['tag sequence flag', '\u{1F3F4}\u{E0067}\u{E0062}\u{E0073}\u{E0063}\u{E0074}\u{E007F}'],
+    ])('accepts a single emoji: %s', (_name, emoji) => {
+      expect(parseFeaturedTabEmoji(emoji)).toBe(emoji);
+    });
+
+    it('trims surrounding whitespace', () => {
+      expect(parseFeaturedTabEmoji('  \u2728\n')).toBe('\u2728');
+    });
+
+    // Sixteen scalars is the most a real sequence needs; one more is rejected
+    // by the "more than 16 scalars" case below.
+    it('accepts a sequence of exactly 16 scalars', () => {
+      const sixteen = '\u{1F469}\u{1F3FD}' + '\u200d\u{1F469}'.repeat(7);
+
+      expect(Array.from(sixteen)).toHaveLength(16);
+      expect(parseFeaturedTabEmoji(sixteen)).toBe(sixteen);
+    });
+
+    // Older browsers lack Intl.Segmenter. The check cannot count graphemes
+    // there, so it rejects rather than guesses and the default glyph shows.
+    it('rejects a valid emoji where Intl.Segmenter is unavailable', () => {
+      const original = Intl.Segmenter;
+      Object.defineProperty(Intl, 'Segmenter', { value: undefined, configurable: true, writable: true });
+      try {
+        expect(parseFeaturedTabEmoji('\u2728')).toBeNull();
+      } finally {
+        Object.defineProperty(Intl, 'Segmenter', { value: original, configurable: true, writable: true });
+      }
+      expect(parseFeaturedTabEmoji('\u2728')).toBe('\u2728');
+    });
+
+    it.each([
+      ['empty string', ''],
+      ['whitespace', '  '],
+      ['letters', 'ab'],
+      ['two emoji', '\u2728\u2728'],
+      ['emoji with text', '\u2728 hi'],
+      ['a digit', '1'],
+      ['markup', '<b>'],
+      ['a bidi override before the emoji', '\u202E\u2728'],
+      ['a zero-width joiner alone', '\u200D'],
+      ['VS16 alone', '\uFE0F'],
+      ['two skin-tone modifiers with no base', '\u{1F3FD}\u{1F3FD}'],
+      ['a lone regional indicator', '\u{1F1FA}'],
+      ['three regional indicators', '\u{1F1FA}\u{1F1F8}\u{1F1EC}'],
+      ['tag characters with no black-flag base', '\u{E0067}\u{E007F}'],
+      ['a zero-width space after an emoji', '\u2728\u200B'],
+      ['a keycap', '1\uFE0F\u20E3'],
+      // Extended_Pictographic includes these, but they read as text rather than
+      // as a tab icon, and the Funnelcake validator rejects them on write.
+      ['copyright', '\u00A9'],
+      ['registered', '\u00AE'],
+      ['trade mark', '\u2122'],
+      ['trade mark with VS16', '\u2122\uFE0F'],
+      ['information source', '\u2139'],
+      ['circled M', '\u24C2'],
+      ['a text symbol inside a ZWJ sequence', '\u{1F469}\u200D\u00A9'],
+      ['null', null],
+      ['undefined', undefined],
+      ['a number', 42],
+      ['an object', { emoji: '\u2728' }],
+      ['more than 16 scalars', '\u{1F469}' + '\u200D\u{1F469}'.repeat(8)],
+    ])('rejects %s', (_name, value) => {
+      expect(parseFeaturedTabEmoji(value)).toBeNull();
+    });
   });
 
   it('maps featured video envelopes without reordering server data', () => {

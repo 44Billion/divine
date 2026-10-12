@@ -93,6 +93,103 @@ export function parseFeaturedTabSponsorName(value: unknown): string | null {
   return cleaned || null;
 }
 
+/** The featured tab's glyph when the config supplies no usable emoji. */
+export const DEFAULT_FEATURED_TAB_EMOJI = '\u2728';
+
+// One ZWJ family sequence is 7 scalars and a subdivision flag is 7; 16 leaves
+// room for every real emoji while bounding what a config can make us render.
+const MAX_EMOJI_SCALARS = 16;
+const PICTOGRAPH = /^\p{Extended_Pictographic}$/u;
+// Extended_Pictographic includes these letter-like symbols (©, ®, ™, ℹ, Ⓜ), but
+// they read as text rather than as a tab icon. The Funnelcake validator
+// rejects them when an admin saves the emoji, and this check stays in step.
+const TEXT_SYMBOLS = new Set(['\u00A9', '\u00AE', '\u2122', '\u2139', '\u24C2']);
+const SKIN_TONE = /^\p{Emoji_Modifier}$/u;
+const REGIONAL_INDICATOR = /^\p{Regional_Indicator}$/u;
+const VS16 = '\uFE0F';
+const ZWJ = '\u200D';
+const BLACK_FLAG = '\u{1F3F4}';
+const CANCEL_TAG = '\u{E007F}';
+const TAG_SPEC = /^[\u{E0020}-\u{E007E}]$/u;
+
+function isPictograph(scalar: string | undefined): boolean {
+  return scalar !== undefined && !TEXT_SYMBOLS.has(scalar) && PICTOGRAPH.test(scalar);
+}
+
+/** A subdivision flag: the black flag, tag specs, then the cancel tag. */
+function isTagFlag(scalars: string[]): boolean {
+  if (scalars[0] !== BLACK_FLAG || scalars.length < 3) return false;
+  if (scalars[scalars.length - 1] !== CANCEL_TAG) return false;
+  return scalars.slice(1, -1).every((scalar) => TAG_SPEC.test(scalar));
+}
+
+/**
+ * A pictograph, each optionally followed by VS16 or a skin-tone modifier, and
+ * ZWJ-joined to further pictographs. Every joiner, selector and modifier must
+ * sit next to a pictograph, so a value made only of those invisible scalars is
+ * rejected instead of rendering an empty tab. Keycaps (digit + U+20E3) are
+ * deliberately not allowed: admitting their base characters would let plain
+ * digits through.
+ */
+function isPictographSequence(scalars: string[]): boolean {
+  if (!isPictograph(scalars[0])) return false;
+  for (let i = 1; i < scalars.length; i += 1) {
+    const scalar = scalars[i];
+    const previous = scalars[i - 1];
+    if (scalar === VS16 || SKIN_TONE.test(scalar)) {
+      if (!isPictograph(previous)) return false;
+    } else if (scalar === ZWJ) {
+      if (!isPictograph(scalars[i + 1])) return false;
+    } else if (!isPictograph(scalar) || previous !== ZWJ) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/** Exactly two regional indicators make a flag; one alone is not an emoji. */
+function isRegionalFlag(scalars: string[]): boolean {
+  return scalars.length === 2 && scalars.every((scalar) => REGIONAL_INDICATOR.test(scalar));
+}
+
+let graphemeSegmenter: Intl.Segmenter | undefined;
+
+/**
+ * Returns null where `Intl.Segmenter` is unavailable (older browsers), which
+ * fails the emoji check and lands on the default glyph rather than guessing.
+ */
+function countGraphemes(value: string): number | null {
+  if (typeof Intl.Segmenter !== 'function') return null;
+
+  // Built on first use and reused: selection runs on every render of every
+  // useFeaturedTab consumer, and constructing a segmenter each time is waste.
+  graphemeSegmenter ??= new Intl.Segmenter(undefined, { granularity: 'grapheme' });
+  return Array.from(graphemeSegmenter.segment(value)).length;
+}
+
+/**
+ * The featured tab's emoji is server-supplied and rendered as the whole tab on
+ * a phone, so it is validated rather than cleaned: anything that is not exactly
+ * one emoji is rejected and the caller falls back to the default. It must not
+ * go through stripInvisibleFormatting, which removes the zero-width joiner and
+ * would split a ZWJ sequence into several separate pictographs.
+ */
+export function parseFeaturedTabEmoji(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+
+  const emoji = value.trim();
+  if (!emoji) return null;
+
+  const scalars = Array.from(emoji);
+  if (scalars.length > MAX_EMOJI_SCALARS) return null;
+  if (countGraphemes(emoji) !== 1) return null;
+  if (!isRegionalFlag(scalars) && !isTagFlag(scalars) && !isPictographSequence(scalars)) {
+    return null;
+  }
+
+  return emoji;
+}
+
 export function toFunnelcakeVideo(raw: FeaturedTabVideoRaw): FunnelcakeVideoRaw {
   const createdAt = typeof raw.created_at === 'string'
     ? Math.floor(new Date(raw.created_at).getTime() / 1000)
