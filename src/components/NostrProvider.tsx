@@ -7,6 +7,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useAppContext } from '@/hooks/useAppContext';
 import { debugLog, verboseLog } from '@/lib/debug';
 import { createCachedNostr } from '@/lib/cachedNostr';
+import { AutoLogin } from '@/components/AutoLogin';
 import { buildEventRouter, buildReqRouter } from '@/lib/relayRouting';
 import {
   pickTopN,
@@ -233,6 +234,7 @@ const NostrProvider: React.FC<NostrProviderProps> = (props) => {
 
   return (
     <NostrContext.Provider value={{ nostr: cachedPool.current || pool.current }}>
+      <AutoLogin />
       {children}
     </NostrContext.Provider>
   );
